@@ -1,0 +1,69 @@
+# The pipeline name pipepush routes by is this workflow's name, so keep it
+# in sync with the pipeline configured on the server.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: build and test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: stable
+          cache: true
+
+      - name: Check formatting
+        run: |
+          unformatted=$(gofmt -l ./cmd ./internal)
+          if [ -n "$unformatted" ]; then
+            echo "These files are not gofmt-clean:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: Vet
+        run: go vet ./...
+
+      # The race detector matters here specifically: backup and prune are meant
+      # to be safe to run concurrently, and that guarantee is only worth
+      # something if it is checked.
+      - name: Test
+        run: go test ./... -race -count=1
+
+      - name: Build static binary
+        env:
+          CGO_ENABLED: 0
+        run: |
+          go build -trimpath \
+            -ldflags "-s -w -X github.com/GeraldHofbauerWeb/better-amp-backup/internal/cli.Version=${GITHUB_SHA::7}" \
+            -o amp-bb ./cmd/amp-bb
+          ./amp-bb --version
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: amp-bb-linux-amd64
+          path: amp-bb
+          retention-days: 14
+
+      - name: Notify pipepush
+        if: always()
+        env:
+          PIPEPUSH_TOKEN: ${{ secrets.PIPEPUSH_TOKEN }}
+          PIPEPUSH_SERVER: ${{ vars.PIPEPUSH_SERVER }}
+        run: |
+          # A broken notification must never turn a green build red.
+          curl -sf -X POST "$PIPEPUSH_SERVER/api/webhook" \
+            -H "Content-Type: application/json" \
+            -d "{\"token\":\"$PIPEPUSH_TOKEN\",\"status\":\"${{ job.status }}\",\"pipeline\":\"${{ github.workflow }}\",\"branch\":\"${{ github.ref_name }}\",\"commit\":\"${{ github.sha }}\",\"runId\":\"${{ github.run_number }}\"}" \
+            || echo "pipepush notification failed; not failing the build over it"
