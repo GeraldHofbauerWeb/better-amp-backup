@@ -14,6 +14,19 @@ import (
 // AMPExcludeFile is the name AMP uses for its per-directory exclusion lists.
 const AMPExcludeFile = ".backupExclude"
 
+// Which AMP versions actually read these files is version-dependent, and worth
+// knowing before relying on them. On a 2.8 Minecraft instance the string
+// ".backupExclude" appears only in GenericModule; the backup plugin builds its
+// exclusion set from an internal map (manualExclusions / autoExclusions) that
+// is written through FileManagerPlugin.ChangeExclusion, so a hand-placed file
+// is inert there. Measured directly: an instance with these files in place
+// still had every excluded path in AMP's next ZIP.
+//
+// They are still parsed here, because they are the documented convention, they
+// do work on other module types and older builds, and reading them costs
+// nothing. But do not promise a user that writing one shrinks AMP's own
+// backups — use the API for that.
+//
 // AMP's semantics differ from gitignore in three ways that matter, all of
 // which are reproduced here so that a user who has curated exclusions for
 // AMP's own backups gets them honoured without re-writing anything:

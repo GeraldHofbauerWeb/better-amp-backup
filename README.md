@@ -102,6 +102,12 @@ admin login, and put the password in a file rather than the environment.
 AMP's own per-directory `.backupExclude` files are honoured by default, so
 exclusions curated for AMP carry over without being rewritten.
 
+A caveat worth knowing, measured on AMP 2.8.0.4: on a Minecraft instance AMP
+itself no longer reads those files. Its backup plugin builds an internal
+exclusion map instead, written through the panel's file manager. So a
+`.backupExclude` you place by hand shapes what `amp-bb` stores, but does not
+shrink AMP's own ZIPs.
+
 ## Status
 
 Early. v0.1 is read-only with respect to your AMP installation: it reads instance
