@@ -41,6 +41,7 @@ func NewRootCommand() *cobra.Command {
 		newVerifyCommand(),
 		newStatsCommand(),
 		newLsCommand(),
+		newDoctorCommand(),
 	)
 	return root
 }

@@ -47,22 +47,47 @@ A backup tool earns trust by being boring about the dangerous parts:
 - AMP's own `Backups/` directory, its file-manager trash, logs, locks and
   rendered map tiles are excluded by default — the things that make a naive
   first run enormous.
-- `forget` only removes snapshot metadata. Objects are deleted exclusively by
-  `prune`, which is a separate, explicit step.
+- The `save-on` that re-enables saving is also sent by a watchdog running
+  independently of the backup, so a wedged or crashed run cannot leave a server
+  unable to save. It is sent again on daemon startup, in case a previous
+  process died holding a quiesce.
+- If the server does not confirm the flush, the run fails. A snapshot of a
+  half-written region file is worse than no snapshot.
 
 ## Usage
 
-```sh
-amp-bb --repo /srv/backups/amp-bb init
-amp-bb --repo /srv/backups/amp-bb backup \
-    --instance SebsModpackv401 \
-    --root /home/amp/.ampdata/instances/SebsModpackv401
+Against a stopped instance, or one you are happy to read while it runs:
 
-amp-bb --repo /srv/backups/amp-bb snapshots
-amp-bb --repo /srv/backups/amp-bb restore <snapshot> --target /tmp/verify
-amp-bb --repo /srv/backups/amp-bb verify  <snapshot> --target /tmp/verify
-amp-bb --repo /srv/backups/amp-bb stats
+```sh
+export AMPBB_REPO=/srv/backups/amp-bb
+amp-bb init
+amp-bb backup --instance MyServer --root /home/amp/.ampdata/instances/MyServer
+amp-bb snapshots
+amp-bb restore <snapshot> --target /tmp/verify
+amp-bb verify  <snapshot> --target /tmp/verify
+amp-bb stats
 ```
+
+Against a **running** server, let AMP hold it still for the world files:
+
+```sh
+export AMPBB_AMP_URL=http://127.0.0.1:8080
+export AMPBB_AMP_USER=backup
+export AMPBB_AMP_PASSWORD_FILE=/etc/better-amp-backup/amp.password
+
+amp-bb doctor --instance MyServer      # check this before trusting anything
+amp-bb backup --instance MyServer --quiesce
+```
+
+With `--quiesce`, the run sends `save-off`, then `save-all flush`, then **waits
+for the server to confirm in its console** before reading a single world file,
+and sends `save-on` afterwards. It does not sleep and hope. With `--amp-url`
+set, `--root` can be omitted: the instance directory is looked up through the
+API rather than guessed from a path that varies between AMP versions and
+datastores.
+
+Give the tool its own AMP account with a read-only-ish role rather than the
+admin login, and put the password in a file rather than the environment.
 
 AMP's own per-directory `.backupExclude` files are honoured by default, so
 exclusions curated for AMP carry over without being rewritten.
@@ -73,9 +98,8 @@ Early. v0.1 is read-only with respect to your AMP installation: it reads instanc
 directories and writes only to its own repository. It never writes into an
 instance, never touches AMP's `Backups.json`, and ships no deleting operations.
 
-Not yet implemented: console quiescing through the AMP API, retention and
-pruning, restoring directly into an instance, materialising snapshots into AMP's
-own Backups tab, and S3 targets.
+Not yet implemented: retention and pruning, restoring directly into an
+instance, materialising snapshots into AMP's own Backups tab, and S3 targets.
 
 ## Building
 

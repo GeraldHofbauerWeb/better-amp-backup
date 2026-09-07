@@ -7,13 +7,16 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"regexp"
 	"strings"
 	"syscall"
 	"text/tabwriter"
 	"time"
 
+	"github.com/GeraldHofbauerWeb/better-amp-backup/internal/amp"
 	"github.com/GeraldHofbauerWeb/better-amp-backup/internal/backup"
 	"github.com/GeraldHofbauerWeb/better-amp-backup/internal/exclude"
+	"github.com/GeraldHofbauerWeb/better-amp-backup/internal/quiesce"
 	"github.com/GeraldHofbauerWeb/better-amp-backup/internal/repo"
 	"github.com/GeraldHofbauerWeb/better-amp-backup/internal/restore"
 	"github.com/spf13/cobra"
@@ -81,6 +84,9 @@ func newBackupCommand() *cobra.Command {
 		useDefaults bool
 		reserveGiB  float64
 		quiet       bool
+		doQuiesce   bool
+		confirmPat  string
+		ampCfg      ampFlags
 	)
 	cmd := &cobra.Command{
 		Use:   "backup",
@@ -89,8 +95,8 @@ func newBackupCommand() *cobra.Command {
 			"the previous snapshot. Without --quiesce-* options the application is\n" +
 			"assumed to be stopped or idle; this is the safe mode to start with.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if instance == "" || root == "" {
-				return errors.New("both --instance and --root are required")
+			if instance == "" {
+				return errors.New("--instance is required")
 			}
 			r, err := openRepo()
 			if err != nil {
@@ -98,6 +104,47 @@ func newBackupCommand() *cobra.Command {
 			}
 			ctx, stop := signalContext()
 			defer stop()
+
+			// A panel connection serves two purposes: finding the instance
+			// directory without guessing a path, and quiescing the application
+			// while its live files are read.
+			var ampClient *amp.Client
+			if ampCfg.configured() {
+				if ampClient, err = ampCfg.client(); err != nil {
+					return err
+				}
+			}
+			if root == "" {
+				if ampClient == nil {
+					return errors.New("pass --root, or --amp-url so the instance directory can be looked up")
+				}
+				if root, err = resolveRoot(ctx, ampClient, instance); err != nil {
+					return err
+				}
+				if !quiet {
+					fmt.Printf("Instance %s lives at %s\n", instance, root)
+				}
+			}
+
+			quiescer := backup.Quiescer(backup.NoQuiesce{Reason: "not requested"})
+			if doQuiesce {
+				if ampClient == nil {
+					return errors.New("--quiesce needs --amp-url, --amp-user and a password")
+				}
+				pattern := quiesce.DefaultConfirmPattern
+				if confirmPat != "" {
+					if pattern, err = regexp.Compile(confirmPat); err != nil {
+						return fmt.Errorf("--confirm-pattern: %w", err)
+					}
+				}
+				quiescer = quiesce.NewConsole(ampClient, quiesce.Config{
+					ConfirmPattern: pattern,
+					SkipIfStopped:  true,
+					Log: func(format string, args ...any) {
+						fmt.Fprintf(os.Stderr, "quiesce: "+format+"\n", args...)
+					},
+				})
+			}
 
 			// Built-in rules come first so a user pattern can negate them.
 			var patterns []string
@@ -136,6 +183,7 @@ func newBackupCommand() *cobra.Command {
 				Exclude:      excludeSet,
 				Hot:          hotSet,
 				Tags:         tags,
+				Quiescer:     quiescer,
 				Paranoid:     paranoid,
 				SkipAbs:      []string{r.Root()},
 				ReserveBytes: reserveBytes(reserveGiB),
@@ -150,7 +198,8 @@ func newBackupCommand() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&instance, "instance", "", "AMP instance name (groups snapshots)")
-	cmd.Flags().StringVar(&root, "root", "", "instance directory to back up")
+	cmd.Flags().StringVar(&root, "root", "",
+		"instance directory to back up; looked up via the AMP API when omitted")
 	cmd.Flags().StringArrayVar(&excludes, "exclude", nil, "path pattern to skip (repeatable)")
 	cmd.Flags().StringArrayVar(&hot, "hot", nil,
 		"pattern for paths that must be read under quiesce (repeatable; defaults to Minecraft world paths)")
@@ -164,6 +213,11 @@ func newBackupCommand() *cobra.Command {
 	cmd.Flags().Float64Var(&reserveGiB, "reserve", 2,
 		"gibibytes of free space the run must leave untouched; 0 disables the check")
 	cmd.Flags().BoolVar(&quiet, "quiet", false, "suppress progress output")
+	cmd.Flags().BoolVar(&doQuiesce, "quiesce", false,
+		"hold the application still while its live files are read (save-off / save-all flush / save-on)")
+	cmd.Flags().StringVar(&confirmPat, "confirm-pattern", "",
+		"regexp for the console line that confirms the flush (defaults to Minecraft's)")
+	ampCfg.register(cmd)
 	return cmd
 }
 
