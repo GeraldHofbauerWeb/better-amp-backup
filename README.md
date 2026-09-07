@@ -68,6 +68,16 @@ amp-bb verify  <snapshot> --target /tmp/verify
 amp-bb stats
 ```
 
+Housekeeping, in the order it is safe to do it:
+
+```sh
+amp-bb check --read-data     # prove the repository is intact first
+amp-bb forget                # report what a retention policy would drop
+amp-bb forget --apply        # move those snapshots to the trash
+amp-bb prune                 # report what could then be deleted
+amp-bb prune --force --empty-trash
+```
+
 Against a **running** server, let AMP hold it still for the world files:
 
 ```sh
@@ -98,8 +108,8 @@ Early. v0.1 is read-only with respect to your AMP installation: it reads instanc
 directories and writes only to its own repository. It never writes into an
 instance, never touches AMP's `Backups.json`, and ships no deleting operations.
 
-Not yet implemented: retention and pruning, restoring directly into an
-instance, materialising snapshots into AMP's own Backups tab, and S3 targets.
+Not yet implemented: restoring directly into a live instance, materialising
+snapshots into AMP's own Backups tab, a scheduler daemon, and S3 targets.
 
 ## Building
 

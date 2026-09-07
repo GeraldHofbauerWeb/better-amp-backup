@@ -42,6 +42,10 @@ func NewRootCommand() *cobra.Command {
 		newStatsCommand(),
 		newLsCommand(),
 		newDoctorCommand(),
+		newForgetCommand(),
+		newUnforgetCommand(),
+		newPruneCommand(),
+		newCheckCommand(),
 	)
 	return root
 }
