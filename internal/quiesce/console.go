@@ -99,6 +99,7 @@ type Console struct {
 
 	mu           sync.Mutex
 	held         bool
+	heldSince    time.Time
 	skipped      bool
 	stopWatchdog context.CancelFunc
 	watchdogDone chan struct{}
@@ -149,8 +150,13 @@ func (c *Console) Quiesce(ctx context.Context) error {
 	// From this point saving is off, so every path out must turn it back on.
 	c.mu.Lock()
 	c.held = true
+	c.heldSince = time.Now()
 	c.mu.Unlock()
 	c.startWatchdog()
+	// Say so out loud. Disabling saving on a live server is the one thing this
+	// tool does that an operator would want to find in the journal afterwards,
+	// without having to read the game's own log to learn it happened.
+	c.cfg.Log("saving disabled on a running server; waiting for %q to confirm", c.cfg.SaveFlush)
 
 	if err := c.client.SendConsoleMessage(ctx, c.cfg.SaveFlush); err != nil {
 		return fmt.Errorf("quiesce: send %q: %w", c.cfg.SaveFlush, err)
@@ -174,6 +180,8 @@ func (c *Console) waitForFlush(ctx context.Context) error {
 		}
 		for _, e := range updates.ConsoleEntries {
 			if c.cfg.ConfirmPattern.MatchString(e.Contents) {
+				c.cfg.Log("flush confirmed after %s", time.Since(deadline.
+					Add(-c.cfg.ConfirmTimeout)).Round(time.Millisecond))
 				return nil
 			}
 		}
@@ -198,6 +206,7 @@ func (c *Console) waitForFlush(ctx context.Context) error {
 func (c *Console) Release(ctx context.Context) error {
 	c.mu.Lock()
 	held := c.held
+	heldFor := time.Since(c.heldSince)
 	c.held = false
 	c.skipped = false
 	stop := c.stopWatchdog
@@ -216,6 +225,7 @@ func (c *Console) Release(ctx context.Context) error {
 	if err := c.client.SendConsoleMessage(ctx, c.cfg.SaveOn); err != nil {
 		return fmt.Errorf("quiesce: send %q: %w", c.cfg.SaveOn, err)
 	}
+	c.cfg.Log("saving re-enabled after %s", heldFor.Round(time.Millisecond))
 	return nil
 }
 
