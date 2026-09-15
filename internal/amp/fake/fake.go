@@ -117,8 +117,18 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Everything else needs a session.
-	session := r.Header.Get("SESSIONID")
+	// Everything else needs a session, and AMP takes it as a field in the
+	// request body -- not as a header. Reading it from a header here once made
+	// this double agree with a client bug that the real panel did not share:
+	// the calls "succeeded" against the fake and came back anonymous in
+	// production. A test double must follow the protocol, not the caller.
+	session, _ := params["SESSIONID"].(string)
+	if r.Header.Get("SESSIONID") != "" {
+		writeJSON(w, map[string]any{"Title": "Unauthorized Access", "Status": false,
+			"Message": "SESSIONID was sent as a header; AMP ignores that"})
+		s.mu.Unlock()
+		return
+	}
 	if s.ExpireSessionsOnce {
 		s.ExpireSessionsOnce = false
 		delete(s.sessions, session)

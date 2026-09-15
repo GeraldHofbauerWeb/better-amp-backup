@@ -1,9 +1,15 @@
 // Package amp speaks CubeCoders AMP's JSON API.
 //
 // The API is uniform: every call is a POST to /API/<Module>/<Method> with the
-// parameters as a JSON object, authenticated by a SESSIONID header obtained
-// from Core.Login. There are no API keys, so the client holds credentials and
-// re-authenticates when a session expires.
+// parameters as a JSON object, authenticated by a SESSIONID *field in that
+// object* obtained from Core.Login. It is not a header: AMP ignores a SESSIONID
+// header entirely, and an ignored session is not an error but an anonymous
+// call, which fails later and somewhere else -- Core.GetAPISpec quietly shrinks
+// to the handful of methods an unauthenticated caller may see, and everything
+// else answers "not authorised". Measured against AMP 2.8.0.4.
+//
+// There are no API keys, so the client holds credentials and re-authenticates
+// when a session expires.
 package amp
 
 import (
@@ -161,10 +167,16 @@ func (c *Client) sessionOrLogin(ctx context.Context) (string, error) {
 func (c *Client) post(ctx context.Context, module, method string, params map[string]any,
 	session string, out any) error {
 
-	if params == nil {
-		params = map[string]any{}
+	// Copy rather than mutate: params belongs to the caller, and the session
+	// must not leak into a map it might reuse or log.
+	body := make(map[string]any, len(params)+1)
+	for k, v := range params {
+		body[k] = v
 	}
-	payload, err := json.Marshal(params)
+	if session != "" {
+		body["SESSIONID"] = session
+	}
+	payload, err := json.Marshal(body)
 	if err != nil {
 		return fmt.Errorf("amp: encode %s.%s: %w", module, method, err)
 	}
@@ -176,9 +188,6 @@ func (c *Client) post(ctx context.Context, module, method string, params map[str
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
-	if session != "" {
-		req.Header.Set("SESSIONID", session)
-	}
 
 	resp, err := c.http.Do(req)
 	if err != nil {
