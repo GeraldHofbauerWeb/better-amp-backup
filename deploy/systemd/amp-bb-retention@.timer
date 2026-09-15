@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily retention for AMP instance %i
+
+[Timer]
+OnCalendar=*-*-* 04:30:00
+RandomizedDelaySec=600
+Persistent=true
+Unit=amp-bb-retention@%i.service
+
+[Install]
+WantedBy=timers.target

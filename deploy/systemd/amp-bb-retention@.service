@@ -1,0 +1,19 @@
+[Unit]
+Description=Retention and prune for AMP instance %i
+
+[Service]
+Type=oneshot
+User=amp
+Group=amp
+EnvironmentFile=/etc/better-amp-backup/common.env
+# Prove the repository is intact before anything deletes from it.
+ExecStart=/opt/better-amp-backup/bin/amp-bb check
+ExecStart=/opt/better-amp-backup/bin/amp-bb forget --apply
+ExecStart=/opt/better-amp-backup/bin/amp-bb prune --force --empty-trash
+Nice=15
+IOSchedulingClass=idle
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/opt/better-amp-backup/repo

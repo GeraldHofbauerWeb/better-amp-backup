@@ -108,6 +108,37 @@ exclusion map instead, written through the panel's file manager. So a
 `.backupExclude` you place by hand shapes what `amp-bb` stores, but does not
 shrink AMP's own ZIPs.
 
+## Running it on a schedule
+
+`deploy/` installs amp-bb as a systemd timer, with the service running as the
+`amp` user rather than root — it needs no more access than the instances it
+reads already have.
+
+```sh
+sudo deploy/install.sh --instance MyServer \
+     --amp-url http://127.0.0.1:8082 \
+     --root /home/amp/.ampdata/instances/MyServer
+```
+
+The script prints what is left to do: the password file, `init`, a `doctor`
+run, one backup by hand, and only then `systemctl enable --now
+amp-bb@MyServer.timer`. It never overwrites an existing configuration and does
+not enable the timer for you.
+
+Give the tool's AMP account exactly three permissions, no more:
+
+| Permission | Where to set it |
+| ---------- | --------------- |
+| `Core.AppManagement.ReadConsole` | inside the instance |
+| `Core.AppManagement.SendConsoleInput` | inside the instance |
+| `Instances.<guid>.Manage` | in the controller |
+
+The first two must be set from *inside* the instance's own role management. Set
+from the controller they apply to every instance on the host. The third is what
+lets the account log in to the instance at all: an AMP instance does not
+authenticate on its own, it asks the controller, and the controller refuses
+unless the role may manage that specific instance.
+
 ## Status
 
 Early. v0.1 is read-only with respect to your AMP installation: it reads instance

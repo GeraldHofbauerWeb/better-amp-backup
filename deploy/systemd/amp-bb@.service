@@ -1,0 +1,26 @@
+[Unit]
+Description=Incremental backup of AMP instance %i
+Documentation=https://github.com/GeraldHofbauerWeb/better-amp-backup
+After=ampinstmgr.service network-online.target
+
+[Service]
+Type=oneshot
+# The instances belong to this user already; a backup needs no more than
+# they can read, and specifically not root.
+User=amp
+Group=amp
+EnvironmentFile=/etc/better-amp-backup/common.env
+EnvironmentFile=/etc/better-amp-backup/%i.env
+ExecStart=/opt/better-amp-backup/bin/amp-bb backup --instance %i --root ${AMPBB_ROOT} --quiesce --quiet
+# A backup must not slow down the server it is backing up.
+Nice=10
+IOSchedulingClass=idle
+# It reads instances and writes only into its own repository.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+ReadWritePaths=/opt/better-amp-backup/repo
