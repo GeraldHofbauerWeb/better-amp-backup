@@ -252,6 +252,11 @@ func printBackupSummary(m *repo.Manifest, wall time.Duration) {
 	fmt.Printf("  deduplicated    %d objects already present\n", m.Stats.ReusedObjects)
 	fmt.Printf("  written         %d new objects, %s\n",
 		m.Stats.NewObjects, humanBytes(m.Stats.NewBytes))
+	if m.Stats.RereadFiles > 0 {
+		// Visible, but not alarming: these settled, or they would have warned.
+		fmt.Printf("  re-read         %d file(s) that changed while being read\n",
+			m.Stats.RereadFiles)
+	}
 	fmt.Printf("  quiesce window  %d ms\n", m.QuiesceMillis)
 	fmt.Printf("  wall time       %s\n", wall.Round(time.Millisecond))
 

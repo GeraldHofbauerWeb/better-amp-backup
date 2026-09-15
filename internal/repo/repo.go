@@ -245,6 +245,14 @@ func (r *Repository) OpenIndex(id string) (*IndexReader, func() error, error) {
 
 // LatestFor returns the most recent complete snapshot ID for an instance, or
 // "" when there is none. This is the parent a stat-diff runs against.
+//
+// Partial snapshots are deliberately skipped. A file that never settled is
+// recorded with the hash of a torn read: those bytes are genuinely in the
+// repository, so the snapshot restores, but the file they came from was
+// mid-write. Trusting such an entry as a baseline would let a later run see a
+// matching size and mtime, call the file unchanged, and keep pointing at the
+// torn copy indefinitely. Reading it again costs one file; getting this wrong
+// costs the file, silently, forever.
 func (r *Repository) LatestFor(instance string) (string, error) {
 	all, err := r.ListSnapshots()
 	if err != nil {

@@ -378,6 +378,41 @@ func TestVanishedFileDowngradesToPartial(t *testing.T) {
 	}
 }
 
+// A file that changes between the walk and the read is re-read, and the second
+// read settles. That is the retry working, not damage: the snapshot must stay
+// complete. Marking it partial would be worse than cosmetic -- a stat-diff only
+// descends from a complete parent, so on a server that is actually running,
+// where something is always mid-write, the baseline would never advance again.
+func TestSuccessfulRereadKeepsSnapshotComplete(t *testing.T) {
+	f := newFixture(t)
+	r := newRepo(t)
+
+	// A hot path, so it is read after the quiescer has had its say.
+	moving := filepath.Join(f.root, "Minecraft", "survival_world", "region", "r.0.0.mca")
+	q := &recordingQuiescer{onQuiesce: func() {
+		// Longer than whatever the fixture wrote, so size alone gives it away.
+		_ = os.WriteFile(moving, []byte(strings.Repeat("changed under the reader", 64)), 0o644)
+	}}
+
+	opts := baseOptions(f.root)
+	opts.Quiescer = q
+
+	m, err := Run(context.Background(), r, opts)
+	if err != nil {
+		t.Fatalf("a file changing mid-run should not fail the backup: %v", err)
+	}
+	if len(m.Warnings) != 0 {
+		t.Fatalf("a settled re-read must not warn, got %q", m.Warnings)
+	}
+	if m.Stats.RereadFiles == 0 {
+		t.Fatal("the file was expected to be re-read; the test proves nothing otherwise")
+	}
+	if m.State != repo.StateComplete {
+		t.Errorf("state = %q, want complete: %d re-read, no warnings",
+			m.State, m.Stats.RereadFiles)
+	}
+}
+
 func TestPartialSnapshotIsNotUsedAsParent(t *testing.T) {
 	f := newFixture(t)
 	r := newRepo(t)

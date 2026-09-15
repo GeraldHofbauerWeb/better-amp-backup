@@ -196,8 +196,15 @@ func Run(ctx context.Context, r *repo.Repository, opts Options) (*repo.Manifest,
 		}
 	}
 
+	// Only a warning degrades a snapshot. A re-read is not a warning: it is
+	// the retry working. Files change under a running server constantly, so
+	// counting successful re-reads here marked every live snapshot partial --
+	// and since a stat-diff only descends from a complete parent, the baseline
+	// would then freeze at the last snapshot taken while the server was down
+	// and never advance again. The tool would quietly get slower for as long
+	// as the server stayed up. A file that never settles still warns, above.
 	state := repo.StateComplete
-	if len(run.warnings) > 0 || run.stats.RereadFiles > 0 {
+	if len(run.warnings) > 0 {
 		state = repo.StatePartial
 	}
 
