@@ -2,7 +2,9 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
@@ -39,18 +41,27 @@ func (l level) mark() string {
 
 // requiredMethods are the API calls this tool depends on. Checking them up
 // front turns "the backup died at 03:00" into "doctor told you on day one".
+//
+// ADSModule.GetLocalInstances is deliberately not in this list. It exists only
+// on a controller (ADS); an instance endpoint answers "No such module loaded:
+// 'ADSModule'" and is none the worse for it, because the only thing that
+// method does here is look up an instance directory that --root can state
+// outright. Requiring it made a correctly configured instance fail the check.
 var requiredMethods = [][2]string{
 	{"Core", "Login"},
 	{"Core", "GetStatus"},
 	{"Core", "GetUpdates"},
 	{"Core", "SendConsoleMessage"},
-	{"ADSModule", "GetLocalInstances"},
 }
+
+// adsModule is the module a controller exposes and an instance does not.
+const adsModule = "ADSModule"
 
 func newDoctorCommand() *cobra.Command {
 	var (
 		ampCfg   ampFlags
 		instance string
+		root     string
 	)
 	cmd := &cobra.Command{
 		Use:   "doctor",
@@ -64,7 +75,7 @@ func newDoctorCommand() *cobra.Command {
 
 			var checks []check
 			checks = append(checks, repositoryChecks()...)
-			checks = append(checks, ampChecks(ctx, &ampCfg, instance)...)
+			checks = append(checks, ampChecks(ctx, &ampCfg, instance, root)...)
 
 			var failures int
 			for _, c := range checks {
@@ -81,6 +92,8 @@ func newDoctorCommand() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&instance, "instance", "",
 		"also verify this instance exists and report where it lives")
+	cmd.Flags().StringVar(&root, "root", "",
+		"instance directory the backup will read; checked for readability")
 	ampCfg.register(cmd)
 	return cmd
 }
@@ -150,7 +163,7 @@ func repositoryChecks() []check {
 	return out
 }
 
-func ampChecks(ctx context.Context, cfg *ampFlags, instance string) []check {
+func ampChecks(ctx context.Context, cfg *ampFlags, instance, root string) []check {
 	if !cfg.configured() {
 		return []check{{"AMP panel", "no --amp-url given; quiescing and instance lookup are unavailable", levelWarn}}
 	}
@@ -175,8 +188,15 @@ func ampChecks(ctx context.Context, cfg *ampFlags, instance string) []check {
 			}
 		}
 		if len(missing) > 0 {
-			out = append(out, check{"AMP API spec",
-				"this AMP build is missing " + strings.Join(missing, ", "), levelFail})
+			// AMP filters this spec by what the caller may actually call, so
+			// a missing method usually means a missing permission rather than
+			// an old build -- and a role change made in the controller can
+			// take a moment to reach the instance. Saying "this build is
+			// missing" sent one operator hunting the wrong problem.
+			out = append(out, check{"AMP API spec", fmt.Sprintf(
+				"%s not available to user %s — grant the role Core.AppManagement "+
+					"rights on this instance, or wait for a recent change to propagate",
+				strings.Join(missing, ", "), cfg.user), levelFail})
 		} else {
 			out = append(out, check{"AMP API spec",
 				fmt.Sprintf("%d modules, all required methods present", len(spec)), levelOK})
@@ -193,30 +213,73 @@ func ampChecks(ctx context.Context, cfg *ampFlags, instance string) []check {
 		out = append(out, check{"application state", detail, levelOK})
 	}
 
-	instances, err := client.GetLocalInstances(ctx)
-	if err != nil {
-		out = append(out, check{"instances", err.Error(), levelWarn})
-		return out
+	// Only a controller can list instances. Pointing at an instance directly
+	// is the normal, and safer, way to run a backup, so its inability to
+	// answer this is a fact about the endpoint, not a fault.
+	isController := amp.HasMethod(spec, adsModule, "GetLocalInstances")
+	switch {
+	case !isController:
+		out = append(out, check{"endpoint", fmt.Sprintf(
+			"an instance, not a controller (no %s) — pass --root", adsModule), levelOK})
+	default:
+		if instances, err := client.GetLocalInstances(ctx); err != nil {
+			out = append(out, check{"instances", err.Error(), levelWarn})
+		} else {
+			var names []string
+			for _, in := range instances {
+				names = append(names, in.InstanceName)
+			}
+			out = append(out, check{"instances", strings.Join(names, ", "), levelOK})
+		}
 	}
-	var names []string
-	for _, in := range instances {
-		names = append(names, in.InstanceName)
-	}
-	out = append(out, check{"instances", strings.Join(names, ", "), levelOK})
 
-	if instance != "" {
-		root, err := resolveRoot(ctx, client, instance)
-		if err != nil {
+	// What the backup will actually read. An explicit --root is checked as
+	// given; without one, a controller can still be asked where the instance
+	// lives, and an instance endpoint can only say "tell me".
+	if root == "" && instance != "" {
+		if !isController {
+			out = append(out, check{"instance " + instance,
+				"cannot be looked up through an instance endpoint; pass --root", levelWarn})
+			return out
+		}
+		var err error
+		if root, err = resolveRoot(ctx, client, instance); err != nil {
 			out = append(out, check{"instance " + instance, err.Error(), levelFail})
 			return out
 		}
-		lvl := levelOK
-		detail := root
-		if _, err := os.Stat(root); err != nil {
-			lvl = levelFail
-			detail = fmt.Sprintf("%s — but this process cannot read it: %v", root, err)
+	}
+	if root != "" {
+		name := "instance directory"
+		if instance != "" {
+			name = "instance " + instance
 		}
-		out = append(out, check{"instance " + instance, detail, lvl})
+		detail, lvl := rootDetail(root)
+		out = append(out, check{name, detail, lvl})
 	}
 	return out
+}
+
+// rootDetail reports whether the process can actually read the instance
+// directory. Stat alone is not enough: AMP keeps instances under a home
+// directory that is routinely 0700, so a run started as the wrong user sees
+// the path exist and then fails on the first read.
+func rootDetail(root string) (string, level) {
+	info, err := os.Stat(root)
+	if err != nil {
+		return fmt.Sprintf("%s — cannot be read: %v", root, err), levelFail
+	}
+	if !info.IsDir() {
+		return fmt.Sprintf("%s — not a directory", root), levelFail
+	}
+	f, err := os.Open(root)
+	if err != nil {
+		return fmt.Sprintf("%s — cannot be opened: %v", root, err), levelFail
+	}
+	defer f.Close()
+	// io.EOF only means the directory is empty, which is odd for an instance
+	// but not an error; anything else is the permission problem being hunted.
+	if _, err := f.ReadDir(1); err != nil && !errors.Is(err, io.EOF) {
+		return fmt.Sprintf("%s — cannot be listed: %v", root, err), levelFail
+	}
+	return root, levelOK
 }
