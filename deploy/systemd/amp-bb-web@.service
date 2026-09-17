@@ -35,12 +35,15 @@ ProtectHome=read-only
 ProtectKernelTunables=true
 ProtectControlGroups=true
 RestrictSUIDSGID=true
-# The repository it writes, and the instance a restore puts files back into.
-# ReadWritePaths takes precedence over ProtectHome -- checked with systemd-run
-# before this was written, because the failure mode is a restore dying with
-# EROFS in production.
+# The repository it writes. The instance directory -- which a restore writes
+# into -- is added by a per-instance drop-in that the installer generates,
+# because systemd does not expand environment variables in this setting: it
+# reports "path is not absolute, ignoring" and carries on, and the symptom
+# would be a restore dying with EROFS in production.
+#
+# ReadWritePaths does take precedence over ProtectHome=read-only; that part was
+# checked with systemd-run rather than assumed.
 ReadWritePaths=/opt/better-amp-backup/repo
-ReadWritePaths=${AMPBB_ROOT}
 
 [Install]
 WantedBy=multi-user.target

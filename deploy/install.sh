@@ -104,6 +104,17 @@ fi
 for unit in "${UNITS[@]}"; do
   install -m 0644 "$(dirname "$0")/systemd/$unit" /etc/systemd/system/
 done
+
+# The instance directory has to be named literally: systemd does not expand
+# environment variables in ReadWritePaths, and quietly ignores the setting when
+# it finds one. Without this a restore into the instance fails with EROFS.
+DROPIN=/etc/systemd/system/amp-bb-web@$INSTANCE.service.d
+install -d -m 0755 "$DROPIN"
+cat > "$DROPIN/instance-path.conf" <<DROP
+[Service]
+ReadWritePaths=$ROOT
+DROP
+chmod 0644 "$DROPIN/instance-path.conf"
 systemctl daemon-reload
 
 cat <<NEXT

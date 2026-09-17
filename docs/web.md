@@ -40,6 +40,12 @@ systemctl disable --now amp-bb-web@MyServer.service
 systemctl enable  --now amp-bb@MyServer.timer amp-bb-retention@MyServer.timer
 ```
 
+The installer also writes a per-instance drop-in naming the instance
+directory, because systemd does not expand environment variables in
+`ReadWritePaths=` — it reports "path is not absolute, ignoring" and carries on,
+and the symptom would be a restore failing with `EROFS` months later. If you
+move an instance, run the installer again rather than editing the unit.
+
 ## Who may do what
 
 There are no accounts. A backup tool that grows a user database is how a backup
