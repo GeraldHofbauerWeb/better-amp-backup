@@ -16,6 +16,7 @@ import (
 	"github.com/GeraldHofbauerWeb/better-amp-backup/internal/amp"
 	"github.com/GeraldHofbauerWeb/better-amp-backup/internal/backup"
 	"github.com/GeraldHofbauerWeb/better-amp-backup/internal/exclude"
+	"github.com/GeraldHofbauerWeb/better-amp-backup/internal/format"
 	"github.com/GeraldHofbauerWeb/better-amp-backup/internal/quiesce"
 	"github.com/GeraldHofbauerWeb/better-amp-backup/internal/repo"
 	"github.com/GeraldHofbauerWeb/better-amp-backup/internal/restore"
@@ -247,11 +248,11 @@ func printBackupSummary(m *repo.Manifest, wall time.Duration) {
 		fmt.Printf("  parent          %s\n", m.Parent)
 	}
 	fmt.Printf("  contents        %d files, %d dirs, %d symlinks, %s\n",
-		m.Stats.Files, m.Stats.Dirs, m.Stats.Symlinks, humanBytes(m.Stats.TotalBytes))
+		m.Stats.Files, m.Stats.Dirs, m.Stats.Symlinks, format.Bytes(m.Stats.TotalBytes))
 	fmt.Printf("  unchanged       %d files skipped without reading\n", m.Stats.UnchangedFiles)
 	fmt.Printf("  deduplicated    %d objects already present\n", m.Stats.ReusedObjects)
 	fmt.Printf("  written         %d new objects, %s\n",
-		m.Stats.NewObjects, humanBytes(m.Stats.NewBytes))
+		m.Stats.NewObjects, format.Bytes(m.Stats.NewBytes))
 	if m.Stats.RereadFiles > 0 {
 		// Visible, but not alarming: these settled, or they would have warned.
 		fmt.Printf("  re-read         %d file(s) that changed while being read\n",
@@ -263,7 +264,7 @@ func printBackupSummary(m *repo.Manifest, wall time.Duration) {
 	if m.Stats.TotalBytes > 0 && m.Stats.NewBytes >= 0 {
 		saved := 100 * (1 - float64(m.Stats.NewBytes)/float64(m.Stats.TotalBytes))
 		fmt.Printf("  this snapshot cost %s instead of %s (%.2f%% saved)\n",
-			humanBytes(m.Stats.NewBytes), humanBytes(m.Stats.TotalBytes), saved)
+			format.Bytes(m.Stats.NewBytes), format.Bytes(m.Stats.TotalBytes), saved)
 	}
 	for _, w := range m.Warnings {
 		fmt.Printf("  warning: %s\n", w)
@@ -295,8 +296,8 @@ func newSnapshotsCommand() *cobra.Command {
 				shown++
 				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%d\t%s\t%s\t%d ms\n",
 					m.ID, m.Instance, m.StartedAt.Format("2006-01-02 15:04"), m.State,
-					m.Stats.Files, humanBytes(m.Stats.TotalBytes),
-					humanBytes(m.Stats.NewBytes), m.QuiesceMillis)
+					m.Stats.Files, format.Bytes(m.Stats.TotalBytes),
+					format.Bytes(m.Stats.NewBytes), m.QuiesceMillis)
 			}
 			w.Flush()
 			if shown == 0 {
@@ -351,7 +352,7 @@ func newRestoreCommand() *cobra.Command {
 				verb = "Would restore"
 			}
 			fmt.Printf("%s %d files, %d dirs, %d symlinks (%s) to %s\n",
-				verb, rep.Files, rep.Dirs, rep.Symlinks, humanBytes(rep.Bytes), target)
+				verb, rep.Files, rep.Dirs, rep.Symlinks, format.Bytes(rep.Bytes), target)
 			if !rep.DryRun {
 				fmt.Printf("Every restored file was re-hashed and matched the snapshot (%d/%d).\n",
 					rep.Verified, rep.Files)
@@ -436,11 +437,11 @@ func newStatsCommand() *cobra.Command {
 			fmt.Printf("Repository   %s\n", r.Root())
 			fmt.Printf("Snapshots    %d\n", len(all))
 			fmt.Printf("Objects      %d\n", objects)
-			fmt.Printf("On disk      %s\n", humanBytes(stored))
-			fmt.Printf("Logical      %s  (what the snapshots describe in total)\n", humanBytes(logical))
+			fmt.Printf("On disk      %s\n", format.Bytes(stored))
+			fmt.Printf("Logical      %s  (what the snapshots describe in total)\n", format.Bytes(logical))
 			if stored > 0 && logical > 0 {
 				fmt.Printf("Ratio        %.1fx  (%s saved)\n",
-					float64(logical)/float64(stored), humanBytes(logical-stored))
+					float64(logical)/float64(stored), format.Bytes(logical-stored))
 			}
 			return nil
 		},
@@ -482,7 +483,7 @@ func newLsCommand() *cobra.Command {
 				case repo.TypeSymlink:
 					fmt.Fprintf(w, "l\t-\t-\t%s -> %s\n", e.Path, e.Target)
 				default:
-					fmt.Fprintf(w, "f\t%o\t%s\t%s\n", e.Mode.Perm(), humanBytes(e.Size), e.Path)
+					fmt.Fprintf(w, "f\t%o\t%s\t%s\n", e.Mode.Perm(), format.Bytes(e.Size), e.Path)
 				}
 			}
 			return w.Flush()

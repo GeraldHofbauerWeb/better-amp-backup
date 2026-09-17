@@ -8,6 +8,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/GeraldHofbauerWeb/better-amp-backup/internal/format"
 	"github.com/GeraldHofbauerWeb/better-amp-backup/internal/repo"
 	"github.com/spf13/cobra"
 )
@@ -169,7 +170,7 @@ func newPruneCommand() *cobra.Command {
 			}
 			fmt.Printf("Snapshots     %d live, %d in the trash\n", rep.LiveSnapshots, rep.TrashedSnapshots)
 			fmt.Printf("Objects       %d total, %d still referenced\n", rep.TotalObjects, rep.ReferencedObjects)
-			fmt.Printf("%-13s %d objects, %s\n", verb, rep.DeletedObjects, humanBytes(rep.FreedBytes))
+			fmt.Printf("%-13s %d objects, %s\n", verb, rep.DeletedObjects, format.Bytes(rep.FreedBytes))
 			if rep.SparedRecent > 0 {
 				fmt.Printf("Spared        %d unreferenced object(s) younger than %s\n",
 					rep.SparedRecent, grace)

@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/GeraldHofbauerWeb/better-amp-backup/internal/exclude"
+	"github.com/GeraldHofbauerWeb/better-amp-backup/internal/format"
 	"github.com/GeraldHofbauerWeb/better-amp-backup/internal/repo"
 	"github.com/GeraldHofbauerWeb/better-amp-backup/internal/scan"
 )
@@ -408,21 +409,8 @@ func checkSpace(r *repo.Repository, items []scan.Item, previous map[string]repo.
 			"but only %s is free on %s (keeping %s in reserve). "+
 			"Exclude what does not belong in the backup, move the repository to another "+
 			"volume, or lower the reserve deliberately",
-			humanBytes(needed), humanBytes(int64(space.AvailableBytes)), r.Root(),
-			humanBytes(opts.ReserveBytes))
+			format.Bytes(needed), format.Bytes(int64(space.AvailableBytes)), r.Root(),
+			format.Bytes(opts.ReserveBytes))
 	}
 	return nil
-}
-
-func humanBytes(n int64) string {
-	const unit = 1024
-	if n < unit {
-		return fmt.Sprintf("%d B", n)
-	}
-	div, exp := int64(unit), 0
-	for v := n / unit; v >= unit && exp < 4; v /= unit {
-		div *= unit
-		exp++
-	}
-	return fmt.Sprintf("%.1f %ciB", float64(n)/float64(div), "KMGTP"[exp])
 }

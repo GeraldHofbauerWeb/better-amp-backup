@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/GeraldHofbauerWeb/better-amp-backup/internal/amp"
+	"github.com/GeraldHofbauerWeb/better-amp-backup/internal/format"
 	"github.com/GeraldHofbauerWeb/better-amp-backup/internal/repo"
 	"github.com/spf13/cobra"
 )
@@ -140,7 +141,7 @@ func repositoryChecks() []check {
 		return out
 	}
 	detail := fmt.Sprintf("%s free of %s (%.0f%% used)",
-		humanBytes(int64(space.AvailableBytes)), humanBytes(int64(space.TotalBytes)),
+		format.Bytes(int64(space.AvailableBytes)), format.Bytes(int64(space.TotalBytes)),
 		space.UsedPercent())
 	lvl := levelOK
 	switch {
@@ -158,7 +159,7 @@ func repositoryChecks() []check {
 	if lvl != levelOK {
 		out = append(out, check{"reserve", fmt.Sprintf(
 			"a run refuses to start unless %s stays free (--reserve)",
-			humanBytes(2<<30)), levelOK})
+			format.Bytes(2<<30)), levelOK})
 	}
 	return out
 }
