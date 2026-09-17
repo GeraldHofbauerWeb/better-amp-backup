@@ -700,3 +700,41 @@ func waitForJob(t *testing.T, rig *rig, id string) jobs.Job {
 	t.Fatalf("job %s never finished", id)
 	return jobs.Job{}
 }
+
+// After migrating off the systemd timers the daemon has taken no backups of
+// its own, so its run history is empty -- but the repository is full. The
+// overview must report what is actually there rather than "never".
+func TestStatusReportsTheNewestSnapshotEvenWithNoRunHistory(t *testing.T) {
+	rig := newRig(t, nil)
+	rig.signIn(t)
+	m := rig.backup(t) // taken directly, the way the oneshot unit would
+
+	var st Status
+	rig.do(t, "GET", "/amp-bb/api/status", nil, http.StatusOK, &st)
+	if st.LastBackup != nil {
+		t.Fatalf("the daemon claims a run it did not make: %+v", st.LastBackup)
+	}
+	if st.LastSnapshot == nil {
+		t.Fatal("no snapshot reported, so the overview would say never")
+	}
+	if st.LastSnapshot.ID != m.ID {
+		t.Errorf("reported %s, want %s", st.LastSnapshot.ID, m.ID)
+	}
+}
+
+// And it has to be the newest, by the time the run started rather than by id.
+func TestStatusPicksTheNewestSnapshot(t *testing.T) {
+	rig := newRig(t, nil)
+	rig.signIn(t)
+	rig.backup(t)
+	if err := os.WriteFile(filepath.Join(rig.settings.Get().Instance.Root, "new.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	second := rig.backup(t)
+
+	var st Status
+	rig.do(t, "GET", "/amp-bb/api/status", nil, http.StatusOK, &st)
+	if st.LastSnapshot == nil || st.LastSnapshot.ID != second.ID {
+		t.Errorf("reported %v, want %s", st.LastSnapshot, second.ID)
+	}
+}

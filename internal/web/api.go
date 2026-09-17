@@ -91,6 +91,12 @@ type Status struct {
 		StatsAgeSeconds int            `json:"stats_age_seconds"`
 	} `json:"repo"`
 
+	// LastSnapshot is the newest snapshot in the repository, whoever produced
+	// it. LastBackup is only what this daemon did, and after a migration from
+	// the systemd timers that is nothing at all -- so the overview would
+	// announce "never" over a repository holding fifty snapshots.
+	LastSnapshot *repo.Manifest `json:"last_snapshot,omitempty"`
+
 	LastBackup    *state.Run  `json:"last_backup,omitempty"`
 	LastRestore   *state.Run  `json:"last_restore,omitempty"`
 	LastHousekeep *state.Run  `json:"last_housekeeping,omitempty"`
@@ -140,6 +146,7 @@ func (s *server) handleStatus(w http.ResponseWriter, r *http.Request, sess *auth
 	if job, ok := s.Jobs.Current(); ok {
 		out.CurrentJob = &job
 	}
+	out.LastSnapshot = s.newestSnapshot(cfg.Instance.Name)
 	if s.Scheduler != nil {
 		backup, house := s.Scheduler.Next()
 		if !backup.IsZero() {
@@ -156,6 +163,27 @@ func (s *server) handleStatus(w http.ResponseWriter, r *http.Request, sess *auth
 	out.AMPBackups = s.ampBackupSchedule(r.Context(), sess)
 
 	writeJSON(w, http.StatusOK, out)
+}
+
+// newestSnapshot is the most recent snapshot for an instance, by the time the
+// run started rather than by id -- an id is only accurate to the second.
+func (s *server) newestSnapshot(instance string) *repo.Manifest {
+	all, err := s.Repo.ListSnapshots()
+	if err != nil {
+		s.Log.Warn("could not list snapshots for the status page", "error", err)
+		return nil
+	}
+	var newest *repo.Manifest
+	for i := range all {
+		m := all[i]
+		if instance != "" && !strings.EqualFold(m.Instance, instance) {
+			continue
+		}
+		if newest == nil || m.StartedAt.After(newest.StartedAt) {
+			newest = &m
+		}
+	}
+	return newest
 }
 
 func (s *server) stateOrEmpty() state.State {

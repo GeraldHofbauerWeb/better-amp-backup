@@ -798,8 +798,9 @@ function switchView(name) {
     document.querySelectorAll(AMPBB_TAB + ' .ampbb-view').forEach((node) => {
         node.hidden = node.dataset.view !== name;
     });
-    document.querySelectorAll(AMPBB_TAB + ' .ampbb-tab').forEach((node) => {
-        node.classList.toggle('ampbb-tab-active', node.dataset.view === name);
+    document.querySelectorAll(AMPBB_TAB + ' .tabHeader').forEach((node) => {
+        node.classList.toggle('active', node.dataset.view === name);
+        node.setAttribute('aria-selected', node.dataset.view === name ? 'true' : 'false');
     });
     if (name === 'settings') { loadRetentionPreview(); previewExclusions(); }
 }
@@ -839,8 +840,15 @@ async function runJob(path, body) {
 }
 
 function wire() {
-    document.querySelectorAll(AMPBB_TAB + ' .ampbb-tab').forEach((node) => {
+    // AMP's tab headers are divs, so they need the keyboard wired up by hand.
+    document.querySelectorAll(AMPBB_TAB + ' .tabHeader').forEach((node) => {
         node.addEventListener('click', () => switchView(node.dataset.view));
+        node.addEventListener('keydown', (ev) => {
+            if (ev.key === 'Enter' || ev.key === ' ') {
+                ev.preventDefault();
+                switchView(node.dataset.view);
+            }
+        });
     });
 
     el('ampbb-run-backup').addEventListener('click', () => runJob('/jobs/backup', { tags: ['manual'] }));

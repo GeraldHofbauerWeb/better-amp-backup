@@ -11,7 +11,6 @@
    colours, or they render as grey pills the size of a form control. */
 .ampbb .ampbb-name,
 .ampbb .ampbb-crumb,
-.ampbb .ampbb-tab,
 .ampbb .ampbb-more {
   background: none;
   border: 0;
@@ -30,7 +29,6 @@
 }
 .ampbb .ampbb-name:hover,
 .ampbb .ampbb-crumb:hover,
-.ampbb .ampbb-tab:hover,
 .ampbb .ampbb-more:hover { background: none; }
 
 /* Likewise for inputs: AMP gives every text field width:100%, which is right
@@ -60,9 +58,13 @@
 .ampbb-banner-error { color: #d9534f; }
 .ampbb-banner-info { color: #5bc0de; }
 
-.ampbb-tabs { display: flex; gap: .25rem; margin: .5rem 0 1rem; flex-wrap: wrap; }
-.ampbb-tab { padding: .5rem 1rem; border-bottom: 2px solid transparent; cursor: pointer; opacity: .6; }
-.ampbb-tab-active { opacity: 1; border-bottom-color: currentColor; }
+/* AMP's own tab strip, reused rather than imitated: the markup is
+   .tabHeaderContainer > .button.tabHeader with .active, and the panel's
+   stylesheet does the rest -- including the oversized watermark icon. Only the
+   negative margins need adjusting, because they are cut for the settings tab's
+   padding and not for ours. */
+.ampbb .tabHeaderContainer { margin: 0 -1rem 1.25rem; padding: 0 1rem; top: 0; }
+.ampbb .tabHeaderContainer .tabHeader { user-select: none; }
 
 .ampbb-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: .75rem; }
 .ampbb-card { padding: .9rem 1rem; border-radius: 4px; background: rgba(127, 127, 127, .1); }
@@ -126,6 +128,45 @@
 
 .ampbb-preview { margin-top: .5rem; font-size: .85rem; }
 
+/* A settings row reads left to right and lines up right to left: the sentence
+   on the left, the number and its unit together on the right. The unit is an
+   addon welded to the input rather than loose text, and every addon is the
+   same width, so the whole column lines up however long the labels are. */
+.ampbb-row-setting {
+  display: flex; align-items: center; justify-content: space-between;
+  flex-wrap: wrap; gap: .5rem 1rem; padding: .45rem 0;
+}
+.ampbb-row-setting + .ampbb-row-setting { border-top: 1px solid rgba(127, 127, 127, .12); }
+.ampbb-row-setting > label { flex: 1 1 auto; min-width: 0; }
+.ampbb-row-note { flex-basis: 100%; font-size: .82rem; opacity: .6; margin-top: -.15rem; }
+
+.ampbb-field { display: inline-flex; align-items: stretch; flex: 0 0 auto; }
+.ampbb-field input[type="number"] {
+  width: 5rem;
+  text-align: right;
+  margin: 0;
+  border-radius: 4px 0 0 0;
+}
+/* Matching the input's own shape: AMP draws these as a filled box with a
+   single bottom border, so the addon has to carry the same border or the two
+   halves sit at different heights. */
+.ampbb-addon {
+  display: flex; align-items: center; justify-content: flex-start;
+  box-sizing: border-box;
+  min-width: 7.5rem;
+  margin: 0;
+  padding: 0 .7rem;
+  background: rgba(127, 127, 127, .22);
+  border: none;
+  border-bottom: 1px solid rgba(255, 255, 255, .4);
+  border-radius: 0 4px 0 0;
+  font-size: .9rem;
+  line-height: 1;
+  opacity: .85;
+  white-space: nowrap;
+}
+select.ampbb-addon { width: 7.5rem; cursor: pointer; opacity: 1; }
+
 /* Settings as sentences. A column of numbered boxes labelled "hourly" and
    "weekly" needs a manual; "keep one per hour for the last 24 hours" does not. */
 .ampbb-sentence {
@@ -144,6 +185,17 @@
 .ampbb-toggle-body { flex: 1 1 auto; }
 .ampbb-toggle-title { line-height: 1.5; }
 .ampbb-toggle-note { font-size: .82rem; opacity: .6; }
+
+/* Retention is a tall list of short rows; the other two are short. Side by
+   side, nothing has to stretch the full width of a panel. */
+.ampbb-settings-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0 1.25rem; align-items: start; }
+.ampbb-settings-grid > [data-area="retention"]  { grid-column: 1; grid-row: 1 / span 2; }
+.ampbb-settings-grid > [data-area="schedule"]   { grid-column: 2; grid-row: 1; }
+.ampbb-settings-grid > [data-area="exclusions"] { grid-column: 2; grid-row: 2; }
+.ampbb-settings-grid > [data-area="actions"]    { grid-column: 1 / -1; }
+@media (max-width: 1100px) {
+  .ampbb-settings-grid { display: block; }
+}
 
 .ampbb-section { margin: 1.25rem 0; padding: 1rem 1.1rem; border-radius: 4px; background: rgba(127, 127, 127, .08); }
 .ampbb-section > h3 { margin: 0 0 .25rem; font-size: 1.05rem; font-weight: 600; }
