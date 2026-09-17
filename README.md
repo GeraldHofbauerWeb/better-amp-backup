@@ -139,14 +139,46 @@ lets the account log in to the instance at all: an AMP instance does not
 authenticate on its own, it asks the controller, and the controller refuses
 unless the role may manage that specific instance.
 
+## A tab in AMP's own panel
+
+`amp-bb serve` runs a daemon that keeps the schedule itself and serves an
+interface that appears in AMP's sidebar, beside AMP's own Backups entry:
+browse snapshots, restore all or part of one, change the cadence, the retention
+policy and the exclusions, and watch a run as it happens.
+
+```sh
+sudo deploy/install.sh --instance MyServer \
+     --amp-url http://127.0.0.1:8082 \
+     --root /home/amp/.ampdata/instances/MyServer \
+     --with-web --panel-url https://panel.example.net \
+     --amp-instance-id <the instance's AMP GUID>
+```
+
+There are no accounts: whoever is signed into the panel is signed into this,
+and what they may do is derived from what AMP's own permission-filtered API
+spec says they may do there. Stopping the server from the interface runs under
+*your* session, so the backup account keeps exactly the three permissions
+above and gains nothing.
+
+Two things to know before relying on it. The sidebar entry is injected into the
+panel's page with nginx `sub_filter`, which CubeCoders does not support and an
+AMP update can undo — when it does, only the entry disappears and the interface
+stays reachable at `/amp-bb/`. And the daemon replaces the two systemd timers
+rather than joining them, because a schedule you can change from a browser
+cannot live in a file the daemon may not write.
+
+Details, including the capability table and the way back to the timers:
+[`docs/web.md`](docs/web.md).
+
 ## Status
 
-Early. v0.1 is read-only with respect to your AMP installation: it reads instance
-directories and writes only to its own repository. It never writes into an
-instance, never touches AMP's `Backups.json`, and ships no deleting operations.
+v0.2. With respect to your AMP installation it stays narrow: it reads instance
+directories, writes only to its own repository, and never touches AMP's
+`Backups.json`. A restore into a live instance now exists, refuses to run
+unless the instance is stopped, and takes a `pre-restore` snapshot first.
 
-Not yet implemented: restoring directly into a live instance, materialising
-snapshots into AMP's own Backups tab, a scheduler daemon, and S3 targets.
+Not yet implemented: materialising snapshots into AMP's own Backups tab, S3
+targets, and more than one instance per daemon.
 
 ## Building
 
