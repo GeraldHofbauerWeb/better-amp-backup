@@ -1,0 +1,157 @@
+<div class="ampbb">
+  <div class="ampbb-banners" id="ampbb-banners"></div>
+
+  <div class="ampbb-tabs" role="tablist">
+    <button class="ampbb-tab ampbb-tab-active" data-view="overview" role="tab">Overview</button>
+    <button class="ampbb-tab" data-view="snapshots" role="tab">Snapshots</button>
+    <button class="ampbb-tab" data-view="settings" role="tab">Settings</button>
+  </div>
+
+  <!-- Overview -->
+  <section class="ampbb-view" data-view="overview">
+    <div class="ampbb-cards">
+      <div class="ampbb-card">
+        <div class="ampbb-card-label">Last backup</div>
+        <div class="ampbb-card-value" id="ampbb-last-backup">&mdash;</div>
+        <div class="ampbb-card-sub" id="ampbb-last-backup-sub"></div>
+      </div>
+      <div class="ampbb-card">
+        <div class="ampbb-card-label">Next backup</div>
+        <div class="ampbb-card-value" id="ampbb-next-backup">&mdash;</div>
+        <div class="ampbb-card-sub" id="ampbb-next-backup-sub"></div>
+      </div>
+      <div class="ampbb-card">
+        <div class="ampbb-card-label">Repository</div>
+        <div class="ampbb-card-value" id="ampbb-repo-size">&mdash;</div>
+        <div class="ampbb-card-sub" id="ampbb-repo-sub"></div>
+      </div>
+      <div class="ampbb-card">
+        <div class="ampbb-card-label">Disk free</div>
+        <div class="ampbb-card-value" id="ampbb-disk">&mdash;</div>
+        <div class="ampbb-card-sub" id="ampbb-disk-sub"></div>
+      </div>
+    </div>
+
+    <div class="ampbb-actions">
+      <button class="button" id="ampbb-run-backup"><span class="mat-icon">backup</span> Back up now</button>
+      <button class="button" id="ampbb-run-check"><span class="mat-icon">fact_check</span> Check repository</button>
+      <button class="button" id="ampbb-run-housekeeping"><span class="mat-icon">cleaning_services</span> Housekeeping</button>
+    </div>
+
+    <div class="ampbb-job" id="ampbb-job" hidden>
+      <div class="ampbb-job-head">
+        <span class="ampbb-job-title" id="ampbb-job-title"></span>
+        <button class="slimButton" id="ampbb-job-cancel">Cancel</button>
+      </div>
+      <div class="ampbb-bar"><div class="ampbb-bar-fill" id="ampbb-job-bar"></div></div>
+      <div class="ampbb-job-stage" id="ampbb-job-stage"></div>
+      <pre class="ampbb-log" id="ampbb-job-log"></pre>
+    </div>
+  </section>
+
+  <!-- Snapshots -->
+  <section class="ampbb-view" data-view="snapshots" hidden>
+    <div class="ampbb-split">
+      <div class="ampbb-list">
+        <div class="ampbb-list-head">
+          <span>Snapshots</span>
+          <span class="ampbb-muted" id="ampbb-snapshot-count"></span>
+        </div>
+        <div id="ampbb-snapshot-list"></div>
+      </div>
+
+      <div class="ampbb-browser">
+        <div class="ampbb-browser-head">
+          <div id="ampbb-browser-title" class="ampbb-muted">Pick a snapshot to browse it.</div>
+          <input type="search" id="ampbb-search" placeholder="Find a file&hellip;" disabled>
+        </div>
+        <div class="ampbb-crumbs" id="ampbb-crumbs"></div>
+        <div class="ampbb-tree" id="ampbb-tree"></div>
+        <div class="ampbb-restore-bar" id="ampbb-restore-bar" hidden>
+          <span id="ampbb-selection-summary"></span>
+          <button class="slimButton" id="ampbb-clear-selection">Clear</button>
+          <button class="button" id="ampbb-restore">Restore&hellip;</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Settings -->
+  <section class="ampbb-view" data-view="settings" hidden>
+    <div class="settingsGroup">
+      <div class="groupBody">
+        <div class="settingContainer">
+          <div class="settingLabel">Take a backup every</div>
+          <input type="text" id="ampbb-every" placeholder="1h">
+          <div class="settingDescription">A Go duration: 30m, 1h, 6h. Backups are skipped while another job is running.</div>
+        </div>
+        <div class="settingContainer">
+          <div class="settingLabel">Spread each run over</div>
+          <input type="text" id="ampbb-jitter" placeholder="5m">
+          <div class="settingDescription">Random delay before each run, so it does not collide with AMP's own backup on the hour.</div>
+        </div>
+        <div class="settingContainer">
+          <div class="settingLabel">Hold the server still while reading world files</div>
+          <label><input type="checkbox" id="ampbb-quiesce"> save-off, flush, save-on</label>
+          <div class="settingDescription">Only the files that changed are read inside that window. On an idle hour it is nothing at all.</div>
+        </div>
+        <div class="settingContainer">
+          <div class="settingLabel">Backups enabled</div>
+          <label><input type="checkbox" id="ampbb-schedule-enabled"> run on a schedule</label>
+        </div>
+      </div>
+    </div>
+
+    <div class="settingsGroup">
+      <div class="groupBody">
+        <div class="settingContainer">
+          <div class="settingLabel">Housekeeping</div>
+          <label><input type="checkbox" id="ampbb-house-enabled"> run daily at</label>
+          <input type="text" id="ampbb-house-at" placeholder="04:30" size="6">
+          <input type="text" id="ampbb-house-tz" placeholder="Europe/Vienna">
+          <div class="settingDescription">Checks the repository, applies retention, then reclaims the space. In that order, and it stops if the check finds anything.</div>
+        </div>
+        <div class="settingContainer ampbb-keeps">
+          <div class="settingLabel">Keep</div>
+          <label>last <input type="number" id="ampbb-keep-last" min="0"></label>
+          <label>hourly <input type="number" id="ampbb-keep-hourly" min="0"></label>
+          <label>daily <input type="number" id="ampbb-keep-daily" min="0"></label>
+          <label>weekly <input type="number" id="ampbb-keep-weekly" min="0"></label>
+          <label>monthly <input type="number" id="ampbb-keep-monthly" min="0"></label>
+          <label>yearly <input type="number" id="ampbb-keep-yearly" min="0"></label>
+          <label>everything within <input type="text" id="ampbb-keep-within" size="6"></label>
+          <label>never fewer than <input type="number" id="ampbb-min-snapshots" min="1"></label>
+          <div class="settingDescription">
+            A snapshot is kept if any rule wants it. <span id="ampbb-retention-preview" class="ampbb-muted"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="settingsGroup">
+      <div class="groupBody">
+        <div class="settingContainer">
+          <div class="settingLabel">Leave out</div>
+          <textarea id="ampbb-exclusions" rows="8" spellcheck="false"></textarea>
+          <div class="settingDescription">
+            One pattern per line. <code>**</code> crosses directories, a leading <code>!</code> puts something back,
+            a backslash makes the next character literal. A pattern with no slash matches that name at any depth.
+          </div>
+          <div class="ampbb-preview" id="ampbb-exclusion-preview"></div>
+        </div>
+        <div class="settingContainer">
+          <label><input type="checkbox" id="ampbb-use-defaults"> also apply the built-in exclusions</label>
+          <div class="settingDescription" id="ampbb-default-list"></div>
+        </div>
+        <div class="settingContainer">
+          <label><input type="checkbox" id="ampbb-honour-amp"> honour AMP's own .backupExclude files</label>
+        </div>
+      </div>
+    </div>
+
+    <div class="ampbb-actions">
+      <button class="button" id="ampbb-save-settings">Save settings</button>
+      <span id="ampbb-settings-status" class="ampbb-muted"></span>
+    </div>
+  </section>
+</div>

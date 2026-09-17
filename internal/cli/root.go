@@ -42,6 +42,7 @@ func NewRootCommand() *cobra.Command {
 		newStatsCommand(),
 		newLsCommand(),
 		newDoctorCommand(),
+		newServeCommand(),
 		newForgetCommand(),
 		newUnforgetCommand(),
 		newPruneCommand(),

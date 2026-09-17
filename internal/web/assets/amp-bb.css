@@ -1,0 +1,98 @@
+/* Deliberately small. The panel's own stylesheet supplies the buttons, the
+   inputs and the setting rows; this only adds the shapes AMP has no class for,
+   and takes its colours from the variables the theme already defines so the
+   tab follows a theme change without being told. */
+
+.ampbb { padding: 0 1rem 2rem; }
+
+.ampbb-muted { opacity: .65; }
+
+.ampbb-banners:empty { display: none; }
+.ampbb-banner {
+  display: flex; align-items: flex-start; gap: .6rem;
+  padding: .75rem 1rem; margin: .75rem 0; border-radius: 4px;
+  border-left: 4px solid currentColor;
+  background: rgba(127, 127, 127, .12);
+}
+.ampbb-banner .mat-icon { flex: 0 0 auto; }
+.ampbb-banner-body { flex: 1 1 auto; }
+.ampbb-banner-title { font-weight: 600; }
+.ampbb-banner-actions { display: flex; gap: .5rem; align-items: center; }
+.ampbb-banner-warn { color: #d9a441; }
+.ampbb-banner-error { color: #d9534f; }
+.ampbb-banner-info { color: #5bc0de; }
+
+.ampbb-tabs { display: flex; gap: .25rem; margin: .5rem 0 1rem; flex-wrap: wrap; }
+.ampbb-tab {
+  background: transparent; border: 0; border-bottom: 2px solid transparent;
+  color: inherit; padding: .5rem 1rem; cursor: pointer; font: inherit; opacity: .6;
+}
+.ampbb-tab-active { opacity: 1; border-bottom-color: currentColor; }
+
+.ampbb-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: .75rem; }
+.ampbb-card { padding: .9rem 1rem; border-radius: 4px; background: rgba(127, 127, 127, .1); }
+.ampbb-card-label { font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; opacity: .6; }
+.ampbb-card-value { font-size: 1.4rem; margin: .2rem 0; }
+.ampbb-card-sub { font-size: .85rem; opacity: .65; }
+
+.ampbb-actions { display: flex; gap: .5rem; align-items: center; margin: 1rem 0; flex-wrap: wrap; }
+
+.ampbb-job { margin-top: 1rem; padding: 1rem; border-radius: 4px; background: rgba(127, 127, 127, .1); }
+.ampbb-job-head { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
+.ampbb-job-title { font-weight: 600; }
+.ampbb-job-stage { font-size: .85rem; opacity: .7; margin-top: .3rem; }
+.ampbb-bar { height: 6px; border-radius: 3px; background: rgba(127, 127, 127, .25); margin-top: .6rem; overflow: hidden; }
+.ampbb-bar-fill { height: 100%; width: 0; background: currentColor; transition: width .2s ease; }
+.ampbb-log {
+  margin: .75rem 0 0; max-height: 14rem; overflow: auto; font-size: .8rem;
+  white-space: pre-wrap; word-break: break-word; opacity: .8;
+}
+
+.ampbb-split { display: grid; grid-template-columns: minmax(260px, 340px) 1fr; gap: 1rem; align-items: start; }
+@media (max-width: 900px) { .ampbb-split { grid-template-columns: 1fr; } }
+
+.ampbb-list, .ampbb-browser { border-radius: 4px; background: rgba(127, 127, 127, .08); overflow: hidden; }
+.ampbb-list-head, .ampbb-browser-head {
+  display: flex; justify-content: space-between; align-items: center; gap: .75rem;
+  padding: .6rem .9rem; background: rgba(127, 127, 127, .12);
+}
+#ampbb-snapshot-list { max-height: 28rem; overflow: auto; }
+
+.ampbb-snapshot { display: block; width: 100%; text-align: left; background: transparent; border: 0; color: inherit; font: inherit; cursor: pointer; padding: .55rem .9rem; border-bottom: 1px solid rgba(127,127,127,.15); }
+.ampbb-snapshot:hover { background: rgba(127, 127, 127, .12); }
+.ampbb-snapshot-selected { background: rgba(127, 127, 127, .2); }
+.ampbb-snapshot-when { display: block; }
+.ampbb-snapshot-meta { display: block; font-size: .8rem; opacity: .6; }
+.ampbb-pill { display: inline-block; padding: 0 .4rem; border-radius: 3px; font-size: .72rem; margin-left: .35rem; }
+.ampbb-pill-partial { background: rgba(217, 164, 65, .25); }
+.ampbb-pill-tag { background: rgba(127, 127, 127, .25); }
+
+.ampbb-crumbs { padding: .5rem .9rem; font-size: .85rem; display: flex; flex-wrap: wrap; gap: .25rem; }
+.ampbb-crumb { background: none; border: 0; color: inherit; font: inherit; cursor: pointer; text-decoration: underline; opacity: .8; }
+
+.ampbb-tree { max-height: 26rem; overflow: auto; }
+.ampbb-row { display: flex; align-items: center; gap: .5rem; padding: .3rem .9rem; }
+.ampbb-row:hover { background: rgba(127, 127, 127, .1); }
+.ampbb-row .mat-icon { font-size: 1.1rem; opacity: .7; }
+.ampbb-name { flex: 1 1 auto; background: none; border: 0; color: inherit; font: inherit; text-align: left; cursor: default; overflow-wrap: anywhere; }
+.ampbb-row-dir .ampbb-name { cursor: pointer; }
+.ampbb-size { flex: 0 0 auto; font-size: .8rem; opacity: .6; }
+.ampbb-more { width: 100%; background: none; border: 0; color: inherit; font: inherit; padding: .5rem; cursor: pointer; opacity: .7; }
+
+.ampbb-restore-bar { display: flex; align-items: center; gap: .75rem; padding: .6rem .9rem; background: rgba(127, 127, 127, .14); }
+#ampbb-selection-summary { flex: 1 1 auto; }
+
+.ampbb-preview { margin-top: .5rem; font-size: .85rem; }
+.ampbb-keeps label { display: inline-flex; align-items: center; gap: .35rem; margin: 0 .9rem .5rem 0; }
+.ampbb-keeps input[type=number] { width: 4.5rem; }
+.ampbb-keeps { flex-wrap: wrap; }
+
+.ampbb-dialog-backdrop {
+  position: fixed; inset: 0; background: rgba(0, 0, 0, .55);
+  display: flex; align-items: center; justify-content: center; z-index: 9999; padding: 1rem;
+}
+.ampbb-dialog { max-width: 32rem; width: 100%; border-radius: 6px; padding: 1.25rem; background: #21252b; color: #e6e6e6; box-shadow: 0 10px 40px rgba(0,0,0,.5); }
+.ampbb-dialog h3 { margin-top: 0; }
+.ampbb-dialog label { display: block; margin: .5rem 0; }
+.ampbb-dialog-actions { display: flex; justify-content: flex-end; gap: .5rem; margin-top: 1rem; }
+.ampbb-dialog-list { max-height: 9rem; overflow: auto; font-size: .85rem; opacity: .8; margin: .5rem 0; }

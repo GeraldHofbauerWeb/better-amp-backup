@@ -16,6 +16,7 @@ import (
 	"io"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -172,6 +173,23 @@ func hotSet(cfg settings.File) (*exclude.Set, error) {
 		hot = exclude.DefaultHotPatterns
 	}
 	return exclude.Compile(hot)
+}
+
+// DefaultHotPatterns and DefaultExclusions let the settings editor show what
+// the built-in lists actually contain, rather than asking a person to trust
+// the words "the defaults".
+func DefaultHotPatterns() []string { return slices.Clone(exclude.DefaultHotPatterns) }
+func DefaultExclusions() []string  { return slices.Clone(exclude.DefaultAMPExclusions) }
+
+// CheckRestorable reports whether a restore into the live instance could start
+// right now.
+//
+// It is separate from Restore so that the interface can refuse in the reply to
+// the request rather than a second later inside a job: the banner is an answer
+// to a click, and a spinner that appears and then turns into a refusal reads
+// like a fault.
+func (r *Runner) CheckRestorable(ctx context.Context) error {
+	return r.requireStopped(ctx)
 }
 
 // TargetKind says where a restore writes.
