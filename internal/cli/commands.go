@@ -403,33 +403,19 @@ func newStatsCommand() *cobra.Command {
 			ctx, stop := signalContext()
 			defer stop()
 
-			var objects int64
-			var stored int64
-			if err := r.Objects().List(ctx, func(info repo.ObjectInfo) error {
-				objects++
-				stored += info.StoredSize
-				return nil
-			}); err != nil {
-				return err
-			}
-
-			all, err := r.ListSnapshots()
+			stats, err := r.Stats(ctx)
 			if err != nil {
 				return err
 			}
-			var logical int64
-			for _, m := range all {
-				logical += m.Stats.TotalBytes
-			}
 
 			fmt.Printf("Repository   %s\n", r.Root())
-			fmt.Printf("Snapshots    %d\n", len(all))
-			fmt.Printf("Objects      %d\n", objects)
-			fmt.Printf("On disk      %s\n", format.Bytes(stored))
-			fmt.Printf("Logical      %s  (what the snapshots describe in total)\n", format.Bytes(logical))
-			if stored > 0 && logical > 0 {
+			fmt.Printf("Snapshots    %d\n", stats.Snapshots)
+			fmt.Printf("Objects      %d\n", stats.Objects)
+			fmt.Printf("On disk      %s\n", format.Bytes(stats.StoredBytes))
+			fmt.Printf("Logical      %s  (what the snapshots describe in total)\n", format.Bytes(stats.LogicalBytes))
+			if stats.StoredBytes > 0 && stats.LogicalBytes > 0 {
 				fmt.Printf("Ratio        %.1fx  (%s saved)\n",
-					float64(logical)/float64(stored), format.Bytes(logical-stored))
+					stats.Ratio(), format.Bytes(stats.SavedBytes()))
 			}
 			return nil
 		},
