@@ -25,7 +25,7 @@ REPO=$PREFIX/repo
 BINARY=${BINARY:-./amp-bb}
 AMP_USER=${AMP_USER:-amp}
 INSTANCE= AMP_URL= ROOT= AMP_ACCOUNT=backup
-WITH_WEB=0 PANEL_URL= INSTANCE_ID= LISTEN=
+WITH_WEB=0 PANEL_URL= INSTANCE_ID= LISTEN= NGINX_GROUP=
 
 die() { echo "error: $*" >&2; exit 1; }
 
@@ -40,6 +40,7 @@ while [[ $# -gt 0 ]]; do
     --panel-url)   PANEL_URL=$2; shift 2;;
     --amp-instance-id) INSTANCE_ID=$2; shift 2;;
     --listen)      LISTEN=$2;   shift 2;;
+    --nginx-group) NGINX_GROUP=$2; shift 2;;
     -h|--help)     sed -n '2,24p' "$0" | sed 's/^# \?//'; exit 0;;
     *)             die "unknown argument: $1";;
   esac
@@ -55,9 +56,16 @@ id "$AMP_USER" >/dev/null 2>&1 || die "user $AMP_USER does not exist"
 if [[ $WITH_WEB -eq 1 ]]; then
   [[ -n $PANEL_URL ]] || die "--with-web needs --panel-url (the controller, not the instance)"
   [[ -n $INSTANCE_ID ]] || die "--with-web needs --amp-instance-id (the instance's AMP GUID)"
+  # nginx has to reach the socket, and the socket is created with its group.
+  # Guessing wrong gives a 502 that looks like the daemon is down.
+  if [[ -z $NGINX_GROUP ]]; then
+    NGINX_GROUP=$(ps -o user= -C nginx 2>/dev/null | grep -v '^root$' | head -1 || true)
+    NGINX_GROUP=${NGINX_GROUP:-www-data}
+  fi
+  getent group "$NGINX_GROUP" >/dev/null || die "group $NGINX_GROUP does not exist (pass --nginx-group)"
 fi
 
-UNITS=(amp-bb@.service amp-bb@.timer amp-bb-retention@.service amp-bb-retention@.timer amp-bb-web@.service)
+UNITS=(amp-bb@.service amp-bb@.timer amp-bb-retention@.service amp-bb-retention@.timer amp-bb-web@.service amp-bb-web@.socket)
 for unit in "${UNITS[@]}"; do
   [[ -f "$(dirname "$0")/systemd/$unit" ]] || die "missing unit file: deploy/systemd/$unit"
 done
@@ -115,6 +123,23 @@ cat > "$DROPIN/instance-path.conf" <<DROP
 ReadWritePaths=$ROOT
 DROP
 chmod 0644 "$DROPIN/instance-path.conf"
+
+SOCKET=/run/better-amp-backup/$INSTANCE.sock
+if [[ $WITH_WEB -eq 1 ]]; then
+  # The socket unit ships with www-data; say so explicitly for anything else.
+  SOCKDROPIN=/etc/systemd/system/amp-bb-web@$INSTANCE.socket.d
+  install -d -m 0755 "$SOCKDROPIN"
+  cat > "$SOCKDROPIN/group.conf" <<DROP
+[Socket]
+SocketGroup=$NGINX_GROUP
+DROP
+  chmod 0644 "$SOCKDROPIN/group.conf"
+
+  install -d -m 0755 /etc/nginx/amp-bb.d
+  sed "s#@SOCKET@#$SOCKET#g" "$(dirname "$0")/nginx/amp-bb.conf" \
+    > /etc/nginx/amp-bb.d/amp-bb-$INSTANCE.conf
+  chmod 0644 /etc/nginx/amp-bb.d/amp-bb-$INSTANCE.conf
+fi
 systemctl daemon-reload
 
 cat <<NEXT
@@ -139,16 +164,22 @@ NEXT
 
 if [[ $WITH_WEB -eq 1 ]]; then
   cat <<WEBNEXT
-  5. systemctl enable --now amp-bb-web@$INSTANCE.service
-  6. wire up nginx -- see deploy/nginx/README.md. In short:
-       mkdir -p /etc/nginx/amp-bb.d && cp deploy/nginx/amp-bb.conf /etc/nginx/amp-bb.d/
-       then, inside the panel vhost's server{} block:
-         include /etc/nginx/amp-bb.d/*.conf;
-       and inside its location / { }:
-         proxy_set_header Accept-Encoding "";
-         sub_filter '</body>' '<script src="/Plugins/AmpBB/Loader.js" defer></script></body>';
-         sub_filter_once on;
-         sub_filter_types text/html;
+  5. systemctl enable --now amp-bb-web@$INSTANCE.socket amp-bb-web@$INSTANCE.service
+  6. two lines in the panel's own vhost, which this script does not touch.
+     /etc/nginx/amp-bb.d/amp-bb-$INSTANCE.conf is written already; it needs
+     including, and the panel page needs the loader.
+
+     inside the vhost's server{} block:
+       include /etc/nginx/amp-bb.d/*.conf;
+     and inside its location / { }:
+       proxy_set_header Accept-Encoding "";
+       sub_filter '</body>' '<script src="/Plugins/AmpBB/Loader.js" defer></script></body>';
+       sub_filter_once on;
+
+     then: nginx -t && systemctl reload nginx
+
+     The socket is owned by amp and the group $NGINX_GROUP, which is how nginx
+     reaches it without the daemon leaving the amp user.
 
 The daemon keeps the schedule itself, so the timers are replaced rather than
 joined. Once it is running:

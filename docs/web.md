@@ -40,6 +40,22 @@ systemctl disable --now amp-bb-web@MyServer.service
 systemctl enable  --now amp-bb@MyServer.timer amp-bb-retention@MyServer.timer
 ```
 
+## The socket
+
+The daemon does not open its own socket. systemd opens it, as root, with the
+group nginx runs as, and passes the daemon the open descriptor; the daemon
+keeps running as `amp`. nginx therefore gets access to exactly that socket and
+nothing else.
+
+The obvious alternative — putting nginx into the `amp` group — would also have
+given it `/etc/better-amp-backup/*.password`, which is `root:amp 0640`. A 502
+from a socket nginx cannot reach is a much better problem than an nginx that
+can read the AMP password.
+
+If nginx on your host runs as something other than `www-data`, pass
+`--nginx-group` to the installer; it guesses from the running process
+otherwise.
+
 The installer also writes a per-instance drop-in naming the instance
 directory, because systemd does not expand environment variables in
 `ReadWritePaths=` — it reports "path is not absolute, ignoring" and carries on,

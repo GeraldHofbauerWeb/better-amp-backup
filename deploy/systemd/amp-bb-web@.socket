@@ -1,0 +1,20 @@
+[Unit]
+Description=Socket for the amp-bb interface of AMP instance %i
+Documentation=https://github.com/GeraldHofbauerWeb/better-amp-backup
+
+[Socket]
+ListenStream=/run/better-amp-backup/%i.sock
+# systemd creates the socket as root and then hands the open descriptor to the
+# daemon, which runs as amp. That is the whole reason this unit exists: nginx
+# gets access to exactly this socket, and the daemon does not have to share a
+# group with it. Sharing the amp group would also have given nginx the AMP
+# password file, which is root:amp 0640.
+SocketUser=amp
+SocketGroup=www-data
+SocketMode=0660
+RuntimeDirectory=better-amp-backup
+RuntimeDirectoryMode=0755
+Service=amp-bb-web@%i.service
+
+[Install]
+WantedBy=sockets.target

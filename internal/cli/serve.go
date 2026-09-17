@@ -10,7 +10,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"strings"
 	"syscall"
 	"time"
 
@@ -179,7 +178,7 @@ func newServeCommand() *cobra.Command {
 				}
 			}()
 
-			log.Info("listening", "address", listen, "instance", instance, "root", root,
+			log.Info("listening", "address", listener.Addr(), "instance", instance, "root", root,
 				"repository", r.Root(), "state", stateDir)
 
 			serverDone := make(chan error, 1)
@@ -223,48 +222,4 @@ func newServeCommand() *cobra.Command {
 	cmd.Flags().DurationVar(&idleTimeout, "idle-timeout", 120*time.Second, "how long an idle connection is kept")
 	ampCfg.register(cmd)
 	return cmd
-}
-
-// listenOn opens a unix socket or a TCP port.
-//
-// Binding to anything but the loopback or a socket is refused. This process
-// can restore a world and stop a server; putting it on a public interface
-// without the panel's nginx in front is not a configuration, it is an
-// accident.
-func listenOn(address string) (net.Listener, func(), error) {
-	if path, ok := strings.CutPrefix(address, "unix:"); ok {
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			return nil, nil, fmt.Errorf("creating the socket directory: %w", err)
-		}
-		// A socket left behind by a killed process would make this fail with
-		// "address already in use" for ever.
-		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return nil, nil, fmt.Errorf("removing the stale socket: %w", err)
-		}
-		listener, err := net.Listen("unix", path)
-		if err != nil {
-			return nil, nil, err
-		}
-		// nginx runs as its own user and has to be able to connect.
-		if err := os.Chmod(path, 0o660); err != nil {
-			listener.Close()
-			return nil, nil, fmt.Errorf("setting the socket mode: %w", err)
-		}
-		return listener, func() { os.Remove(path) }, nil
-	}
-
-	host, _, err := net.SplitHostPort(address)
-	if err != nil {
-		return nil, nil, fmt.Errorf("--listen %q is neither unix:/path nor host:port", address)
-	}
-	if host == "" || host == "0.0.0.0" || host == "::" || host == "*" {
-		return nil, nil, fmt.Errorf(
-			"refusing to listen on %q: this process can restore a world and stop a server, "+
-				"so it binds to the loopback or a unix socket and lets nginx do the rest", address)
-	}
-	listener, err := net.Listen("tcp", address)
-	if err != nil {
-		return nil, nil, err
-	}
-	return listener, func() {}, nil
 }

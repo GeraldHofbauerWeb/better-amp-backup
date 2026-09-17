@@ -3,6 +3,10 @@ Description=Backup interface and scheduler for AMP instance %i
 Documentation=https://github.com/GeraldHofbauerWeb/better-amp-backup
 After=ampinstmgr.service network-online.target
 Wants=network-online.target
+# The socket is created by systemd as root and inherited on startup, so that
+# nginx can reach it without the daemon leaving the amp user.
+Requires=amp-bb-web@%i.socket
+After=amp-bb-web@%i.socket
 
 [Service]
 Type=simple
@@ -18,9 +22,10 @@ ExecStart=/opt/better-amp-backup/bin/amp-bb serve --instance %i --root ${AMPBB_R
 Restart=on-failure
 RestartSec=5
 
-# The socket nginx connects to, and the settings and run history.
+# The directory the socket lives in is traversable by everyone; the socket in
+# it is not. The settings and the run history are ours alone.
 RuntimeDirectory=better-amp-backup
-RuntimeDirectoryMode=0750
+RuntimeDirectoryMode=0755
 StateDirectory=better-amp-backup
 StateDirectoryMode=0750
 
