@@ -22,10 +22,12 @@ ExecStart=/opt/better-amp-backup/bin/amp-bb serve --instance %i --root ${AMPBB_R
 Restart=on-failure
 RestartSec=5
 
-# The directory the socket lives in is traversable by everyone; the socket in
-# it is not. The settings and the run history are ours alone.
-RuntimeDirectory=better-amp-backup
-RuntimeDirectoryMode=0755
+# RuntimeDirectory is deliberately NOT declared here, only on the socket unit.
+# Declaring it in both makes systemd take ownership of that directory's
+# contents for this unit as well -- and since this one runs as amp:amp, it
+# chowns the socket back off nginx's group the moment the service starts. The
+# socket then exists, systemd reports everything healthy, and nginx answers
+# 502.
 StateDirectory=better-amp-backup
 StateDirectoryMode=0750
 

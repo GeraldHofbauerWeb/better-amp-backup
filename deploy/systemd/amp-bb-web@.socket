@@ -12,6 +12,9 @@ ListenStream=/run/better-amp-backup/%i.sock
 SocketUser=amp
 SocketGroup=www-data
 SocketMode=0660
+# Only this unit manages the directory. The service must not also declare it:
+# systemd would then chown its contents to the service's own user, taking the
+# socket away from nginx.
 RuntimeDirectory=better-amp-backup
 RuntimeDirectoryMode=0755
 Service=amp-bb-web@%i.service
