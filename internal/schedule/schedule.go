@@ -31,6 +31,12 @@ type Scheduler struct {
 	clock    func() time.Time
 	// jitter is a seam: the tests need a deterministic one.
 	jitter func(time.Duration) time.Duration
+	// LastSnapshotAt reports when the newest snapshot in the repository was
+	// started, whoever produced it. Without it the first run after a restart
+	// is counted from the restart, so every restart postpones the backup by a
+	// full interval -- and right after migrating off the systemd timers, when
+	// the daemon has no history of its own at all, that is every time.
+	LastSnapshotAt func() time.Time
 
 	started time.Time
 
@@ -180,6 +186,11 @@ func (s *Scheduler) recompute() {
 			base := time.Time{}
 			if st.LastBackup != nil {
 				base = st.LastBackup.StartedAt
+			}
+			if s.LastSnapshotAt != nil {
+				if at := s.LastSnapshotAt(); at.After(base) {
+					base = at
+				}
 			}
 			if s.fired.backup.After(base) {
 				base = s.fired.backup

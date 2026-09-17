@@ -186,6 +186,12 @@ select.ampbb-addon { width: 7.5rem; cursor: pointer; opacity: 1; }
 .ampbb-toggle-title { line-height: 1.5; }
 .ampbb-toggle-note { font-size: .82rem; opacity: .6; }
 
+/* The hidden attribute is display:none from the browser's own stylesheet,
+   which any class here outranks. A view that sets its own display therefore
+   has to say this as well, or every tab shows every panel at once. */
+.ampbb .ampbb-view[hidden],
+.ampbb [hidden] { display: none; }
+
 /* Retention is a tall list of short rows; the other two are short. Side by
    side, nothing has to stretch the full width of a panel. */
 .ampbb-settings-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0 1.25rem; align-items: start; }

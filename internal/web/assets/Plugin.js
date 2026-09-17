@@ -224,11 +224,22 @@ function renderBanners() {
 
 function renderOverview() {
     if (!status) { return; }
-    const last = status.last_backup;
-    text(el('ampbb-last-backup'), last ? ago(last.started_at, status.server_now) : 'never');
-    text(el('ampbb-last-backup-sub'), last
-        ? whenLocal(last.started_at) + '  ·  ' + whenUTC(last.started_at) + (last.success ? '' : '  ·  failed')
-        : 'no backup has run yet');
+    /* last_backup is only what this daemon did; last_snapshot is what is
+     * actually in the repository. After migrating off the systemd timers the
+     * first is empty and the second is not, and "never" over fifty snapshots
+     * would be a lie told on a technicality. */
+    const run = status.last_backup;
+    const snap = status.last_snapshot;
+    const when = (run && run.started_at) || (snap && snap.started_at) || null;
+    text(el('ampbb-last-backup'), when ? ago(when, status.server_now) : 'never');
+    if (!when) {
+        text(el('ampbb-last-backup-sub'), 'no snapshot has been taken yet');
+    } else {
+        let sub = whenLocal(when) + '  ·  ' + whenUTC(when);
+        if (run && !run.success) { sub += '  ·  failed'; }
+        else if (!run && snap) { sub += '  ·  taken before this service took over'; }
+        text(el('ampbb-last-backup-sub'), sub);
+    }
 
     text(el('ampbb-next-backup'), status.next_backup ? ago(status.next_backup, status.server_now) : 'not scheduled');
     text(el('ampbb-next-backup-sub'), status.next_backup ? whenLocal(status.next_backup) : '');

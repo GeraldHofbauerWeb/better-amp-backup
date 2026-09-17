@@ -151,3 +151,17 @@ func ampShortName(display string) string {
 	out = regexp.MustCompile(`[\s'!?]`).ReplaceAllString(out, "")
 	return strings.ToLower(out)
 }
+
+// A view that sets its own display outranks the browser's own rule for the
+// hidden attribute, so every tab would show every panel at once. That is
+// exactly what happened once the settings became a grid.
+func TestHiddenViewsStayHidden(t *testing.T) {
+	css := asset(t, "amp-bb.css")
+	if !strings.Contains(css, "[hidden]") {
+		t.Fatal("nothing in the stylesheet makes a hidden view hidden")
+	}
+	// And the rule has to come from a selector that outranks a bare class.
+	if !strings.Contains(css, ".ampbb .ampbb-view[hidden]") {
+		t.Error("the rule is not specific enough to beat .ampbb-settings-grid")
+	}
+}

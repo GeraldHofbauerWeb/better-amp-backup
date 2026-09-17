@@ -224,3 +224,44 @@ func TestAChangedIntervalIsPickedUp(t *testing.T) {
 	}
 	t.Error("the scheduler did not react to the new interval")
 }
+
+// Right after taking over from the systemd timers the daemon has no run
+// history of its own, but the repository is full. Counting from the daemon's
+// own start would postpone the next backup by a whole interval -- every time
+// the service is restarted, which during a deployment is often.
+func TestTheNextRunCountsFromTheNewestSnapshot(t *testing.T) {
+	h := newHarness(t, func(f *settings.File) {
+		f.Schedule.Every = "1h"
+		f.Schedule.StartupGrace = "0s"
+	})
+	lastSnapshot := h.now.Add(-50 * time.Minute)
+	h.scheduler.LastSnapshotAt = func() time.Time { return lastSnapshot }
+	h.scheduler.recompute()
+
+	backup, _ := h.scheduler.Next()
+	if want := lastSnapshot.Add(time.Hour); !backup.Equal(want) {
+		t.Errorf("next backup at %s, want %s -- ten minutes away, not an hour", backup, want)
+	}
+}
+
+// The daemon's own record still wins when it is newer: a snapshot taken by
+// hand in between must not pull the schedule backwards.
+func TestADaemonRunOutranksAnOlderSnapshot(t *testing.T) {
+	h := newHarness(t, func(f *settings.File) {
+		f.Schedule.Every = "1h"
+		f.Schedule.StartupGrace = "0s"
+	})
+	ownRun := h.now.Add(-10 * time.Minute)
+	if err := h.state.Record(state.Run{
+		Kind: state.KindBackup, StartedAt: ownRun, FinishedAt: ownRun, Success: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	h.scheduler.LastSnapshotAt = func() time.Time { return h.now.Add(-50 * time.Minute) }
+	h.scheduler.recompute()
+
+	backup, _ := h.scheduler.Next()
+	if want := ownRun.Add(time.Hour); !backup.Equal(want) {
+		t.Errorf("next backup at %s, want %s", backup, want)
+	}
+}

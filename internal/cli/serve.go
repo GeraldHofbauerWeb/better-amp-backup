@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -113,6 +114,26 @@ func newServeCommand() *cobra.Command {
 				},
 			}
 			scheduler := schedule.New(settingsStore, stateStore, runner, operations, log, nil)
+			// So that a restart does not postpone the next backup by a whole
+			// interval, and so that taking over from the systemd timers
+			// continues their rhythm instead of starting a new one.
+			scheduler.LastSnapshotAt = func() time.Time {
+				all, err := r.ListSnapshots()
+				if err != nil {
+					log.Warn("could not read the snapshot list for scheduling", "error", err)
+					return time.Time{}
+				}
+				var newest time.Time
+				for _, m := range all {
+					if !strings.EqualFold(m.Instance, instance) {
+						continue
+					}
+					if m.StartedAt.After(newest) {
+						newest = m.StartedAt
+					}
+				}
+				return newest
+			}
 
 			// A client that acts as whoever is looking at the tab. It goes
 			// through the controller's instance proxy, which is the path the
