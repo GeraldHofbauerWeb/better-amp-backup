@@ -23,18 +23,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// defaultHotPatterns are the paths Minecraft rewrites in place. Only these are
-// read while the server is quiesced; everything else is read with the server
-// running normally.
-var defaultHotPatterns = []string{
-	"**/world*/**",
-	"**/*_world/**",
-	"**/level.dat*",
-	"**/playerdata/**",
-	"**/*.mca",
-	"**/*.mcr",
-}
-
 // signalContext cancels on SIGINT/SIGTERM so a run can unwind cleanly — which
 // for a live backup means releasing the quiesce.
 func signalContext() (context.Context, context.CancelFunc) {
@@ -170,7 +158,7 @@ func newBackupCommand() *cobra.Command {
 			}
 			hotPatterns := hot
 			if len(hotPatterns) == 0 {
-				hotPatterns = defaultHotPatterns
+				hotPatterns = exclude.DefaultHotPatterns
 			}
 			hotSet, err := exclude.Compile(hotPatterns)
 			if err != nil {

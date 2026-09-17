@@ -54,3 +54,24 @@ var DefaultAMPExclusions = []string{
 
 // DefaultProfile returns the built-in exclusions as a compiled set.
 func DefaultProfile() *Set { return MustCompile(DefaultAMPExclusions) }
+
+// DefaultHotPatterns are the paths Minecraft rewrites in place. Only these are
+// read while the server is quiesced; everything else is read with the server
+// running normally, which is what keeps the quiesce window down to the delta
+// rather than the whole instance.
+//
+// It lives here rather than in the CLI because the schedule the daemon runs on
+// and the flag default a person types must be the same list. Two lists that
+// drift apart would mean a backup taken from the browser quiescing different
+// files than one taken from the command line.
+var DefaultHotPatterns = []string{
+	"**/world*/**",
+	"**/*_world/**",
+	"**/level.dat*",
+	"**/playerdata/**",
+	"**/*.mca",
+	"**/*.mcr",
+}
+
+// DefaultHotProfile returns the built-in hot paths as a compiled set.
+func DefaultHotProfile() *Set { return MustCompile(DefaultHotPatterns) }
