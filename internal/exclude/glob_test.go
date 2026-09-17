@@ -269,3 +269,73 @@ func TestPatternsWithNonASCIICharacters(t *testing.T) {
 		}
 	}
 }
+
+// The names this exists for: a modpack jar whose brackets would otherwise open
+// a character class, and the handful of characters that mean something to the
+// compiler.
+func TestQuoteGlobMakesARealPathLiteral(t *testing.T) {
+	names := []string{
+		"[1.21.1] Some Mod.jar",
+		"weird*name?.txt",
+		"!not-a-negation",
+		"#not-a-comment",
+		"back\\slash.cfg",
+		"plain.txt",
+		"a/b/c.txt",
+		"größe-täst.toml",
+	}
+	for _, name := range names {
+		set, err := Compile([]string{QuoteGlob(name)})
+		if err != nil {
+			t.Errorf("Compile(QuoteGlob(%q)): %v", name, err)
+			continue
+		}
+		if !set.Match(name) {
+			t.Errorf("QuoteGlob(%q) does not match its own input", name)
+		}
+	}
+}
+
+// Escaping has to actually narrow the match, or it is decoration.
+func TestQuoteGlobStopsMetacharactersMatchingOtherFiles(t *testing.T) {
+	set := MustCompile([]string{QuoteGlob("mods/weird*name.jar")})
+	if !set.Match("mods/weird*name.jar") {
+		t.Error("the literal name should match")
+	}
+	if set.Match("mods/weirdOTHERname.jar") {
+		t.Error("an escaped '*' must not behave like a wildcard")
+	}
+
+	set = MustCompile([]string{QuoteGlob("mods/[1.21.1] Mod.jar")})
+	if !set.Match("mods/[1.21.1] Mod.jar") {
+		t.Error("the bracketed name should match")
+	}
+	if set.Match("mods/1 Mod.jar") {
+		t.Error("escaped brackets must not behave like a character class")
+	}
+}
+
+// A negation is a leading '!', so a filename starting with one has to survive.
+func TestQuoteGlobDefusesALeadingBang(t *testing.T) {
+	set := MustCompile([]string{"logs", QuoteGlob("!keep-me.txt")})
+	if !set.Match("!keep-me.txt") {
+		t.Error("a file named like a negation should be matched, not re-include something")
+	}
+	if !set.Match("logs/server.log") {
+		t.Error("the earlier rule was undone by what should have been a literal")
+	}
+}
+
+func TestBackslashEscapeEdges(t *testing.T) {
+	if _, err := Compile([]string{`trailing\`}); err == nil {
+		t.Error("a dangling backslash should be an error, not a silent no-op")
+	}
+	if _, err := Compile([]string{`a\/b`}); err == nil {
+		t.Error("escaping the path separator should be refused")
+	}
+	// A doubled backslash is one literal backslash.
+	set := MustCompile([]string{`back\\slash.cfg`})
+	if !set.Match(`back\slash.cfg`) {
+		t.Error(`\\ should match a single backslash`)
+	}
+}

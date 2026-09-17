@@ -40,6 +40,12 @@ type Set struct {
 //     ?        one character within a path segment
 //     **       any run of characters, crossing segment boundaries
 //     !prefix  negation: re-include something an earlier rule excluded
+//     \\x       x literally, whatever x is
+//
+// The backslash escape means a pattern that used to hold a literal backslash
+// now needs it doubled. A backslash is a legal character in a Linux filename,
+// so that is a real if vanishingly rare incompatibility; QuoteGlob produces
+// correctly escaped patterns for anything built from a real path.
 //
 // A pattern without a slash matches that name at any depth, the way
 // .gitignore behaves. Every pattern also matches everything beneath what it
@@ -74,6 +80,41 @@ func Compile(patterns []string) (*Set, error) {
 		s.patterns = append(s.patterns, p)
 	}
 	return s, nil
+}
+
+// QuoteGlob escapes s so that Compile treats every character in it literally.
+//
+// It is how a real path becomes a pattern. Without it there is no way to name
+// a file called "[1.21.1] Some Mod.jar", because the brackets open a character
+// class -- and in a modpack that shape of name is the rule, not the exception.
+//
+// A trailing slash is trimmed: the compiler drops it anyway, and a path ending
+// in one would otherwise quietly come to mean its parent.
+//
+// QuoteGlob escapes, it does not anchor. A result without a slash still
+// matches that name at any depth, because that is what Compile does with any
+// such pattern. Naming one exact path is restore.IncludePaths' job, not this
+// one's.
+func QuoteGlob(s string) string {
+	s = strings.TrimSuffix(s, "/")
+	var b strings.Builder
+	b.Grow(len(s) + 8)
+	for _, r := range s {
+		switch r {
+		case '*', '?', '[', ']', '\\':
+			b.WriteByte('\\')
+			b.WriteRune(r)
+		case '!', '#':
+			// Only meaningful at the very start -- one marks a negation, the
+			// other a comment -- but escaping them wherever they appear keeps
+			// the rule simple enough to hold in your head.
+			b.WriteByte('\\')
+			b.WriteRune(r)
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }
 
 // MustCompile is Compile for patterns known good at build time.
@@ -183,6 +224,18 @@ func compileGlob(glob string) (*regexp.Regexp, error) {
 			}
 			b.WriteString("[" + body + "]")
 			i = end
+		case '\\':
+			// An escape covers what a pattern cannot otherwise reach: a
+			// filename that genuinely contains a metacharacter. Modpack jars
+			// are full of them.
+			if i+1 >= len(runes) {
+				return nil, fmt.Errorf("pattern ends with a dangling '\\'")
+			}
+			i++
+			if runes[i] == '/' {
+				return nil, fmt.Errorf("'/' may not be escaped; it always separates path segments")
+			}
+			b.WriteString(regexp.QuoteMeta(string(runes[i])))
 		case '/':
 			b.WriteString("/")
 		default:
