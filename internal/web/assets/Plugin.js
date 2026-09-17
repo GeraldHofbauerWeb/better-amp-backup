@@ -127,6 +127,26 @@ function ago(iso, now) {
 
 function clear(node) { while (node && node.firstChild) { node.removeChild(node.firstChild); } }
 
+/* Go prints durations as "48h0m0s". Nobody wants to read that, and nobody
+ * should have to type it either, so it is parsed into minutes on the way in
+ * and written back in whichever unit the control used. */
+function durationMinutes(text) {
+    if (!text) { return 0; }
+    let total = 0, matched = false;
+    for (const [pattern, factor] of [[/(\d+(?:\.\d+)?)h/, 60], [/(\d+(?:\.\d+)?)m(?!s)/, 1], [/(\d+(?:\.\d+)?)s/, 1 / 60]]) {
+        const m = pattern.exec(text);
+        if (m) { total += parseFloat(m[1]) * factor; matched = true; }
+    }
+    return matched ? Math.round(total) : 0;
+}
+
+function minutesToDuration(minutes) {
+    minutes = Math.max(0, Math.round(minutes || 0));
+    if (minutes === 0) { return '0s'; }
+    if (minutes % 60 === 0) { return (minutes / 60) + 'h'; }
+    return minutes + 'm';
+}
+
 function make(tag, className, content) {
     const node = document.createElement(tag);
     if (className) { node.className = className; }
@@ -344,31 +364,38 @@ function select(path) {
     selection.add(path);
 }
 
-function deselect(path) {
+/* Unticking something inside a ticked parent: the parent has to be replaced by
+ * its other children, recursively, so that the selection stays a cover of
+ * exactly what is still ticked. This is why the set is the minimal cover and
+ * not simply every path -- the expansion only happens where it has to. */
+async function deselect(path) {
     if (selection.delete(path)) { return; }
-    /* Unticking something inside a ticked parent: keep the rest of the parent
-     * by naming its other children instead. */
-    for (const chosen of Array.from(selection)) {
-        if (path.startsWith(chosen + '/')) {
-            selection.delete(chosen);
-            expandAround(chosen, path);
-            return;
-        }
+
+    let parent = null;
+    for (const chosen of selection) {
+        if (path.startsWith(chosen + '/')) { parent = chosen; break; }
     }
+    if (parent === null) { return; }
+
+    selection.delete(parent);
+    await expandAround(parent, path);
 }
 
+/* Replace `parent` in the selection with its children, leaving out the branch
+ * that leads to `exclude`, and descend into that branch to do the same. */
 async function expandAround(parent, exclude) {
     const listing = await api('GET', '/snapshots/' + encodeURIComponent(selectedSnapshot.id) +
         '/tree?path=' + encodeURIComponent(parent) + '&limit=5000');
-    (listing.entries || []).forEach((node) => {
-        if (node.path !== exclude && !exclude.startsWith(node.path + '/')) { selection.add(node.path); }
-        else if (exclude.startsWith(node.path + '/')) { /* recurse on the way down */ }
-    });
+
     for (const node of (listing.entries || [])) {
-        if (exclude.startsWith(node.path + '/')) { await expandAround(node.path, exclude); }
+        if (node.path === exclude) { continue; }
+        if (exclude.startsWith(node.path + '/')) {
+            // The branch the unticked path lives in: keep descending.
+            await expandAround(node.path, exclude);
+            continue;
+        }
+        selection.add(node.path);
     }
-    renderSelection();
-    await browse(browsePath, browseOffset);
 }
 
 async function browse(path, offset) {
@@ -393,7 +420,7 @@ function renderCrumbs() {
     parts.forEach((part) => {
         acc = acc ? acc + '/' + part : part;
         const here = acc;
-        host.appendChild(make('span', '', ' / '));
+        host.appendChild(make('span', 'ampbb-crumb-sep', '/'));
         const crumb = make('button', 'ampbb-crumb', part);
         crumb.addEventListener('click', () => browse(here));
         host.appendChild(crumb);
@@ -413,9 +440,19 @@ function renderTree(listing, append) {
         box.checked = coveredBySelection(node.path);
         box.disabled = !caps.restore;
         box.addEventListener('change', async () => {
-            if (box.checked) { select(node.path); } else { await deselect(node.path); }
-            renderSelection();
-            await browse(browsePath);
+            // Both paths touch the network, so the box is disabled until the
+            // tree has been redrawn from the new selection. Otherwise a quick
+            // second click acts on a listing that is about to be replaced.
+            box.disabled = true;
+            try {
+                if (box.checked) { select(node.path); } else { await deselect(node.path); }
+                renderSelection();
+                await browse(browsePath);
+            } catch (err) {
+                box.checked = !box.checked;
+                box.disabled = false;
+                throw err;
+            }
         });
         row.appendChild(box);
 
@@ -569,14 +606,17 @@ function renderSettings() {
     const set = (id, value) => { const n = el(id); if (n) { n.value = value === undefined || value === null ? '' : value; } };
     const check = (id, value) => { const n = el(id); if (n) { n.checked = !!value; } };
 
-    set('ampbb-every', s.every);
-    set('ampbb-jitter', s.jitter);
-    check('ampbb-quiesce', s.quiesce);
     check('ampbb-schedule-enabled', s.enabled);
+    check('ampbb-quiesce', s.quiesce);
+    showInterval(s.every);
+    set('ampbb-jitter', durationMinutes(s.jitter));
+    set('ampbb-grace', durationMinutes(s.startup_grace));
 
     check('ampbb-house-enabled', h.enabled);
     set('ampbb-house-at', h.at);
-    set('ampbb-house-tz', h.tz);
+    /* An empty zone means the server's own, which is not a useful thing to
+     * show somebody. Offer theirs as a starting point instead. */
+    set('ampbb-house-tz', h.tz || guessTimeZone());
 
     set('ampbb-keep-last', r.keep_last);
     set('ampbb-keep-hourly', r.keep_hourly);
@@ -584,20 +624,98 @@ function renderSettings() {
     set('ampbb-keep-weekly', r.keep_weekly);
     set('ampbb-keep-monthly', r.keep_monthly);
     set('ampbb-keep-yearly', r.keep_yearly);
-    set('ampbb-keep-within', r.keep_within);
+    showWithin(durationMinutes(r.keep_within));
     set('ampbb-min-snapshots', r.min_snapshots);
 
     set('ampbb-exclusions', (x.patterns || []).join('\n'));
     check('ampbb-use-defaults', x.use_defaults);
     check('ampbb-honour-amp', x.honour_amp);
-    text(el('ampbb-default-list'), defaults.excludes.join(', '));
+
+    const list = el('ampbb-default-list');
+    if (list) {
+        clear(list);
+        defaults.excludes.forEach((pattern) => {
+            const row = make('div');
+            row.appendChild(make('code', '', pattern));
+            list.appendChild(row);
+        });
+    }
 
     const editable = !!caps.settings;
-    document.querySelectorAll('.ampbb-view[data-view="settings"] input, .ampbb-view[data-view="settings"] textarea, #ampbb-save-settings')
+    document.querySelectorAll('.ampbb-view[data-view="settings"] input, ' +
+        '.ampbb-view[data-view="settings"] textarea, ' +
+        '.ampbb-view[data-view="settings"] select, #ampbb-save-settings')
         .forEach((node) => { node.disabled = !editable; });
     if (!editable) {
         text(el('ampbb-settings-status'), 'Read-only: this AMP account may not change the schedule.');
     }
+}
+
+function guessTimeZone() {
+    try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ''; }
+    catch (e) { return ''; }
+}
+
+/* The interval is a dropdown of the answers people actually want, with a text
+ * box for the ones they do not. */
+function showInterval(every) {
+    const preset = el('ampbb-every-preset');
+    const custom = el('ampbb-every');
+    if (!preset || !custom) { return; }
+    const known = Array.from(preset.options).map((o) => o.value);
+    const canonical = minutesToDuration(durationMinutes(every));
+    if (known.indexOf(canonical) >= 0) {
+        preset.value = canonical;
+        custom.hidden = true;
+        custom.value = '';
+    } else {
+        preset.value = 'custom';
+        custom.hidden = false;
+        custom.value = every || '';
+    }
+    describeInterval();
+}
+
+function describeInterval() {
+    const note = el('ampbb-every-note');
+    if (!note) { return; }
+    const minutes = currentIntervalMinutes();
+    if (!minutes) { text(note, ''); return; }
+    const perDay = Math.round((24 * 60) / minutes);
+    text(note, perDay >= 1 ? 'About ' + perDay + ' backup' + (perDay === 1 ? '' : 's') + ' a day.' : '');
+}
+
+function currentIntervalMinutes() {
+    return durationMinutes(currentInterval());
+}
+
+function currentInterval() {
+    const preset = el('ampbb-every-preset');
+    const custom = el('ampbb-every');
+    if (preset && preset.value !== 'custom') { return preset.value; }
+    return custom ? custom.value.trim() : '';
+}
+
+/* Hours below a couple of days, days above -- which is how somebody would
+ * actually say it. */
+function showWithin(minutes) {
+    const amount = el('ampbb-within-amount');
+    const unit = el('ampbb-within-unit');
+    if (!amount || !unit) { return; }
+    const hours = Math.round(minutes / 60);
+    if (hours >= 48 && hours % 24 === 0) {
+        unit.value = 'd';
+        amount.value = hours / 24;
+    } else {
+        unit.value = 'h';
+        amount.value = hours;
+    }
+}
+
+function withinDuration() {
+    const amount = parseInt((el('ampbb-within-amount') || {}).value, 10) || 0;
+    const unit = (el('ampbb-within-unit') || {}).value;
+    return (unit === 'd' ? amount * 24 : amount) + 'h';
 }
 
 function collectSettings() {
@@ -610,10 +728,10 @@ function collectSettings() {
         instance: settings.instance,
         schedule: {
             enabled: checked('ampbb-schedule-enabled'),
-            every: value('ampbb-every'),
-            jitter: value('ampbb-jitter'),
+            every: currentInterval(),
+            jitter: minutesToDuration(number('ampbb-jitter')),
             quiesce: checked('ampbb-quiesce'),
-            startup_grace: (settings.schedule || {}).startup_grace,
+            startup_grace: minutesToDuration(number('ampbb-grace')),
             housekeeping: {
                 enabled: checked('ampbb-house-enabled'),
                 at: value('ampbb-house-at'),
@@ -628,7 +746,7 @@ function collectSettings() {
             keep_weekly: number('ampbb-keep-weekly'),
             keep_monthly: number('ampbb-keep-monthly'),
             keep_yearly: number('ampbb-keep-yearly'),
-            keep_within: value('ampbb-keep-within'),
+            keep_within: withinDuration(),
             keep_tags: (settings.retention || {}).keep_tags || [],
             min_snapshots: number('ampbb-min-snapshots'),
         },
@@ -779,6 +897,25 @@ function wire() {
             text(statusNode, e.message);
         }
     });
+
+    el('ampbb-every-preset').addEventListener('change', () => {
+        const custom = el('ampbb-every');
+        custom.hidden = el('ampbb-every-preset').value !== 'custom';
+        if (!custom.hidden && !custom.value) { custom.focus(); }
+        describeInterval();
+    });
+    el('ampbb-every').addEventListener('input', describeInterval);
+
+    /* The retention preview is what makes those numbers mean anything, so it
+     * follows every change rather than waiting for a save. */
+    let retentionTimer = null;
+    document.querySelectorAll('.ampbb-view[data-view="settings"] input[type="number"], #ampbb-within-unit')
+        .forEach((node) => {
+            node.addEventListener('input', () => {
+                clearTimeout(retentionTimer);
+                retentionTimer = setTimeout(loadRetentionPreview, 400);
+            });
+        });
 
     let previewTimer = null;
     for (const id of ['ampbb-exclusions', 'ampbb-use-defaults']) {

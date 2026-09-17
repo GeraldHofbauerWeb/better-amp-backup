@@ -5,6 +5,44 @@
 
 .ampbb { padding: 0 1rem 2rem; }
 
+/* AMP styles every bare <button> with its own padding, min-width, border and
+   background. The buttons here that are links in disguise -- a file name, a
+   breadcrumb, a view switch -- have to opt out of all of it, not just the
+   colours, or they render as grey pills the size of a form control. */
+.ampbb .ampbb-name,
+.ampbb .ampbb-crumb,
+.ampbb .ampbb-tab,
+.ampbb .ampbb-more {
+  background: none;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+  min-height: 0;
+  height: auto;
+  color: inherit;
+  font: inherit;
+  line-height: 1.5;
+  text-transform: none;
+  letter-spacing: normal;
+}
+.ampbb .ampbb-name:hover,
+.ampbb .ampbb-crumb:hover,
+.ampbb .ampbb-tab:hover,
+.ampbb .ampbb-more:hover { background: none; }
+
+/* Likewise for inputs: AMP gives every text field width:100%, which is right
+   in a settings column and wrong in the middle of a sentence. */
+.ampbb .ampbb-inline input[type="text"],
+.ampbb .ampbb-inline input[type="number"] {
+  width: auto;
+  display: inline-block;
+  margin: 0 .15rem;
+  vertical-align: baseline;
+}
+
 .ampbb-muted { opacity: .65; }
 
 .ampbb-banners:empty { display: none; }
@@ -23,10 +61,7 @@
 .ampbb-banner-info { color: #5bc0de; }
 
 .ampbb-tabs { display: flex; gap: .25rem; margin: .5rem 0 1rem; flex-wrap: wrap; }
-.ampbb-tab {
-  background: transparent; border: 0; border-bottom: 2px solid transparent;
-  color: inherit; padding: .5rem 1rem; cursor: pointer; font: inherit; opacity: .6;
-}
+.ampbb-tab { padding: .5rem 1rem; border-bottom: 2px solid transparent; cursor: pointer; opacity: .6; }
 .ampbb-tab-active { opacity: 1; border-bottom-color: currentColor; }
 
 .ampbb-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: .75rem; }
@@ -67,25 +102,58 @@
 .ampbb-pill-partial { background: rgba(217, 164, 65, .25); }
 .ampbb-pill-tag { background: rgba(127, 127, 127, .25); }
 
-.ampbb-crumbs { padding: .5rem .9rem; font-size: .85rem; display: flex; flex-wrap: wrap; gap: .25rem; }
-.ampbb-crumb { background: none; border: 0; color: inherit; font: inherit; cursor: pointer; text-decoration: underline; opacity: .8; }
+/* align-items:center plus the button reset above is what keeps the separator
+   on the same baseline as the crumbs. */
+.ampbb-crumbs {
+  padding: .5rem .9rem; font-size: .85rem;
+  display: flex; flex-wrap: wrap; align-items: center; gap: .3rem;
+}
+.ampbb-crumb { cursor: pointer; text-decoration: underline; opacity: .8; }
+.ampbb-crumb:hover { opacity: 1; }
+.ampbb-crumb-sep { opacity: .4; }
 
 .ampbb-tree { max-height: 26rem; overflow: auto; }
 .ampbb-row { display: flex; align-items: center; gap: .5rem; padding: .3rem .9rem; }
 .ampbb-row:hover { background: rgba(127, 127, 127, .1); }
 .ampbb-row .mat-icon { font-size: 1.1rem; opacity: .7; }
-.ampbb-name { flex: 1 1 auto; background: none; border: 0; color: inherit; font: inherit; text-align: left; cursor: default; overflow-wrap: anywhere; }
+.ampbb-name { flex: 1 1 auto; text-align: left; cursor: default; overflow-wrap: anywhere; }
 .ampbb-row-dir .ampbb-name { cursor: pointer; }
 .ampbb-size { flex: 0 0 auto; font-size: .8rem; opacity: .6; }
-.ampbb-more { width: 100%; background: none; border: 0; color: inherit; font: inherit; padding: .5rem; cursor: pointer; opacity: .7; }
+.ampbb-more { width: 100%; padding: .5rem; cursor: pointer; opacity: .7; text-decoration: underline; }
 
 .ampbb-restore-bar { display: flex; align-items: center; gap: .75rem; padding: .6rem .9rem; background: rgba(127, 127, 127, .14); }
 #ampbb-selection-summary { flex: 1 1 auto; }
 
 .ampbb-preview { margin-top: .5rem; font-size: .85rem; }
-.ampbb-keeps label { display: inline-flex; align-items: center; gap: .35rem; margin: 0 .9rem .5rem 0; }
-.ampbb-keeps input[type=number] { width: 4.5rem; }
-.ampbb-keeps { flex-wrap: wrap; }
+
+/* Settings as sentences. A column of numbered boxes labelled "hourly" and
+   "weekly" needs a manual; "keep one per hour for the last 24 hours" does not. */
+.ampbb-sentence {
+  display: flex; align-items: center; flex-wrap: wrap; gap: .35rem;
+  padding: .45rem 0;
+  line-height: 1.6;
+}
+.ampbb-sentence + .ampbb-sentence { border-top: 1px solid rgba(127, 127, 127, .12); }
+.ampbb-sentence input[type="number"] { width: 4.5rem; text-align: right; }
+.ampbb-sentence input[type="text"] { width: 7rem; }
+.ampbb-sentence select { width: auto; }
+.ampbb-sentence-note { flex-basis: 100%; font-size: .82rem; opacity: .6; }
+
+.ampbb-toggle { display: flex; align-items: flex-start; gap: .6rem; padding: .5rem 0; }
+.ampbb-toggle input { margin-top: .25rem; flex: 0 0 auto; }
+.ampbb-toggle-body { flex: 1 1 auto; }
+.ampbb-toggle-title { line-height: 1.5; }
+.ampbb-toggle-note { font-size: .82rem; opacity: .6; }
+
+.ampbb-section { margin: 1.25rem 0; padding: 1rem 1.1rem; border-radius: 4px; background: rgba(127, 127, 127, .08); }
+.ampbb-section > h3 { margin: 0 0 .25rem; font-size: 1.05rem; font-weight: 600; }
+.ampbb-section > .ampbb-section-note { margin: 0 0 .75rem; font-size: .85rem; opacity: .6; }
+
+.ampbb details { margin-top: .75rem; }
+.ampbb summary { cursor: pointer; opacity: .7; font-size: .88rem; }
+.ampbb details[open] summary { margin-bottom: .5rem; }
+
+.ampbb textarea { width: 100%; font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; font-size: .85rem; }
 
 .ampbb-dialog-backdrop {
   position: fixed; inset: 0; background: rgba(0, 0, 0, .55);
