@@ -57,12 +57,24 @@ if [[ $WITH_WEB -eq 1 ]]; then
   [[ -n $PANEL_URL ]] || die "--with-web needs --panel-url (the controller, not the instance)"
   [[ -n $INSTANCE_ID ]] || die "--with-web needs --amp-instance-id (the instance's AMP GUID)"
   # nginx has to reach the socket, and the socket is created with its group.
-  # Guessing wrong gives a 502 that looks like the daemon is down.
+  # Guessing wrong gives a 502 that looks like the daemon is down -- which is
+  # exactly what an earlier version of this did, by reading `ps -C nginx` and
+  # believing it. The configuration file is the only thing that actually knows.
   if [[ -z $NGINX_GROUP ]]; then
-    NGINX_GROUP=$(ps -o user= -C nginx 2>/dev/null | grep -v '^root$' | head -1 || true)
+    # "user www-data;" or "user www-data www-data;" -- the second field is the
+    # group when it is there, otherwise the user's own primary group applies.
+    read -r NGINX_USER NGINX_GROUP <<<"$(
+      { nginx -T 2>/dev/null || cat /etc/nginx/nginx.conf 2>/dev/null; } |
+      sed -nE 's/^[[:space:]]*user[[:space:]]+([^;[:space:]]+)([[:space:]]+([^;[:space:]]+))?[[:space:]]*;.*/\1 \3/p' |
+      head -1
+    )"
+    if [[ -z ${NGINX_GROUP:-} && -n ${NGINX_USER:-} ]]; then
+      NGINX_GROUP=$(id -gn "$NGINX_USER" 2>/dev/null || true)
+    fi
     NGINX_GROUP=${NGINX_GROUP:-www-data}
   fi
-  getent group "$NGINX_GROUP" >/dev/null || die "group $NGINX_GROUP does not exist (pass --nginx-group)"
+  getent group "$NGINX_GROUP" >/dev/null ||
+    die "group $NGINX_GROUP does not exist; pass --nginx-group with the group nginx runs as"
 fi
 
 UNITS=(amp-bb@.service amp-bb@.timer amp-bb-retention@.service amp-bb-retention@.timer amp-bb-web@.service amp-bb-web@.socket)
