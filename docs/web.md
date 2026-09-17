@@ -109,6 +109,29 @@ AMP 2.8 has no call that names the session's own user, so the name shown beside
 a change is the one the panel reported and is labelled unverified. It decides
 nothing; it only labels a record somebody will read later.
 
+## Retention
+
+Each rule in "how many backups to keep" applies on its own and can be switched
+off on its own: a snapshot survives if any rule that is switched on wants it.
+Off is stored as a zero, which is what `repo.Policy` already means by "this
+rule does not apply" — so the settings file holds no second opinion about which
+rules are live, and a policy edited in the tab reads the same as one edited by
+hand.
+
+The tab keeps the number a switched-off rule had, greyed out, so that switching
+it back on restores what was there rather than quietly meaning "keep none".
+That number is in the page only; what reaches the server is the zero.
+
+Beneath the rules is the preview, and it measures the rules **as they stand on
+screen** rather than the saved ones (`POST /amp-bb/api/retention/preview` with a
+rule set in the body; the `GET` answers for the saved policy). Switching a rule
+off is a decision about which snapshots stop existing, and that number belongs
+on screen while the box is still under the cursor. It turns red when a change
+would forget more snapshots than it keeps.
+
+A rule set that would keep nothing at all is refused outright, by
+`repo.Policy.Validate`, in the preview and again on save.
+
 ## Restoring
 
 Two targets, and never a path from the browser — an absolute path in a request

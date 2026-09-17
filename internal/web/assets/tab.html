@@ -147,43 +147,61 @@
     <div class="ampbb-section" data-area="retention">
       <h3>How many backups to keep</h3>
       <p class="ampbb-section-note">
-        A snapshot is kept if <em>any</em> of these wants it. Old snapshots cost almost nothing:
+        Each rule stands on its own: untick one and it stops applying. A snapshot is kept if
+        <em>any</em> ticked rule wants it. Old snapshots cost almost nothing &mdash;
         identical files are stored once, however many snapshots point at them.
       </p>
 
       <div class="ampbb-row-setting">
+        <input type="checkbox" id="ampbb-keep-last-on" class="ampbb-rule-toggle" title="Apply this rule">
         <label for="ampbb-keep-last">Always keep the last</label>
         <span class="ampbb-field"><input type="number" id="ampbb-keep-last" min="0"><span class="ampbb-addon">snapshots</span></span>
       </div>
       <div class="ampbb-row-setting">
+        <input type="checkbox" id="ampbb-keep-hourly-on" class="ampbb-rule-toggle" title="Apply this rule">
         <label for="ampbb-keep-hourly">Keep one per hour for the last</label>
         <span class="ampbb-field"><input type="number" id="ampbb-keep-hourly" min="0"><span class="ampbb-addon">hours</span></span>
       </div>
       <div class="ampbb-row-setting">
+        <input type="checkbox" id="ampbb-keep-daily-on" class="ampbb-rule-toggle" title="Apply this rule">
         <label for="ampbb-keep-daily">Keep one per day for the last</label>
         <span class="ampbb-field"><input type="number" id="ampbb-keep-daily" min="0"><span class="ampbb-addon">days</span></span>
       </div>
       <div class="ampbb-row-setting">
+        <input type="checkbox" id="ampbb-keep-weekly-on" class="ampbb-rule-toggle" title="Apply this rule">
         <label for="ampbb-keep-weekly">Keep one per week for the last</label>
         <span class="ampbb-field"><input type="number" id="ampbb-keep-weekly" min="0"><span class="ampbb-addon">weeks</span></span>
       </div>
       <div class="ampbb-row-setting">
+        <input type="checkbox" id="ampbb-keep-monthly-on" class="ampbb-rule-toggle" title="Apply this rule">
         <label for="ampbb-keep-monthly">Keep one per month for the last</label>
         <span class="ampbb-field"><input type="number" id="ampbb-keep-monthly" min="0"><span class="ampbb-addon">months</span></span>
       </div>
       <div class="ampbb-row-setting">
+        <input type="checkbox" id="ampbb-keep-yearly-on" class="ampbb-rule-toggle" title="Apply this rule">
         <label for="ampbb-keep-yearly">Keep one per year for the last</label>
         <span class="ampbb-field"><input type="number" id="ampbb-keep-yearly" min="0"><span class="ampbb-addon">years</span></span>
       </div>
       <div class="ampbb-row-setting">
+        <input type="checkbox" id="ampbb-within-on" class="ampbb-rule-toggle" title="Apply this rule">
         <label for="ampbb-within-amount">Keep absolutely everything from the last</label>
         <span class="ampbb-field"><input type="number" id="ampbb-within-amount" min="0"><select class="ampbb-addon" id="ampbb-within-unit"><option value="h">hours</option><option value="d">days</option></select></span>
         <div class="ampbb-row-note">The safety net: nothing inside this window is ever forgotten.</div>
       </div>
       <div class="ampbb-row-setting">
+        <input type="checkbox" id="ampbb-min-snapshots-on" class="ampbb-rule-toggle" title="Apply this rule">
         <label for="ampbb-min-snapshots">Never go below</label>
-        <span class="ampbb-field"><input type="number" id="ampbb-min-snapshots" min="0" min="1"><span class="ampbb-addon">snapshots</span></span>
-        <div class="ampbb-row-note">Whatever the rules above work out to, this many always survive.</div>
+        <span class="ampbb-field"><input type="number" id="ampbb-min-snapshots" min="1"><span class="ampbb-addon">snapshots</span></span>
+        <div class="ampbb-row-note">A floor under everything above: whatever the rules work out to, this many always survive.</div>
+      </div>
+      <div class="ampbb-row-setting">
+        <input type="checkbox" id="ampbb-keep-tags-on" class="ampbb-rule-toggle" title="Apply this rule">
+        <label for="ampbb-keep-tags">Keep anything tagged</label>
+        <span class="ampbb-field ampbb-field-wide"><input type="text" id="ampbb-keep-tags" spellcheck="false" placeholder="pre-restore, manual"></span>
+        <div class="ampbb-row-note">
+          Comma separated. <code>pre-restore</code> is the snapshot taken automatically before a restore,
+          <code>manual</code> the one you take with &ldquo;Back up now&rdquo;.
+        </div>
       </div>
       <div class="ampbb-preview" id="ampbb-retention-preview"></div>
 

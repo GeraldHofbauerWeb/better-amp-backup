@@ -19,7 +19,7 @@ let csrf = '';
 let caps = {};
 let status = null;
 let settings = null;
-let defaults = { hot: [], excludes: [] };
+let defaults = { hot: [], excludes: [], retention: {} };
 let snapshots = [];
 let selectedSnapshot = null;
 let stream = null;
@@ -608,6 +608,50 @@ async function runInstance(which) {
 
 /* --- settings ------------------------------------------------------------- */
 
+/* Every row of "how many backups to keep" is a rule that applies on its own,
+ * and each one can be switched off without touching the others. Off is stored
+ * as zero, because zero is already what repo.Policy means by "this rule does
+ * not apply" -- the file keeps no second opinion about which rules are live,
+ * and an operator reading settings.json by hand sees the same thing the tab
+ * shows.
+ *
+ * The number a switched-off rule had stays in the box, greyed, so that ticking
+ * it again restores what was there instead of quietly meaning "keep 0". */
+const RETENTION_RULES = [
+    { toggle: 'ampbb-keep-last-on', input: 'ampbb-keep-last' },
+    { toggle: 'ampbb-keep-hourly-on', input: 'ampbb-keep-hourly' },
+    { toggle: 'ampbb-keep-daily-on', input: 'ampbb-keep-daily' },
+    { toggle: 'ampbb-keep-weekly-on', input: 'ampbb-keep-weekly' },
+    { toggle: 'ampbb-keep-monthly-on', input: 'ampbb-keep-monthly' },
+    { toggle: 'ampbb-keep-yearly-on', input: 'ampbb-keep-yearly' },
+    { toggle: 'ampbb-within-on', input: 'ampbb-within-amount', also: ['ampbb-within-unit'] },
+    { toggle: 'ampbb-min-snapshots-on', input: 'ampbb-min-snapshots' },
+    { toggle: 'ampbb-keep-tags-on', input: 'ampbb-keep-tags' },
+];
+
+function ruleIsOn(toggleId) {
+    const node = el(toggleId);
+    return node ? node.checked : true;
+}
+
+/* Greying a row is not decoration: an unticked rule still shows a number, and
+ * a number that is not in force has to look like one. */
+function syncRetentionRows() {
+    const editable = !!caps.settings;
+    RETENTION_RULES.forEach((rule) => {
+        const toggle = el(rule.toggle);
+        const input = el(rule.input);
+        if (!toggle || !input) { return; }
+        const on = toggle.checked;
+        toggle.disabled = !editable;
+        [input].concat((rule.also || []).map(el)).forEach((node) => {
+            if (node) { node.disabled = !editable || !on; }
+        });
+        const row = toggle.closest('.ampbb-row-setting');
+        if (row) { row.classList.toggle('ampbb-rule-off', !on); }
+    });
+}
+
 function renderSettings() {
     if (!settings) { return; }
     const s = settings.schedule || {};
@@ -630,14 +674,30 @@ function renderSettings() {
      * show somebody. Offer theirs as a starting point instead. */
     set('ampbb-house-tz', h.tz || guessTimeZone());
 
-    set('ampbb-keep-last', r.keep_last);
-    set('ampbb-keep-hourly', r.keep_hourly);
-    set('ampbb-keep-daily', r.keep_daily);
-    set('ampbb-keep-weekly', r.keep_weekly);
-    set('ampbb-keep-monthly', r.keep_monthly);
-    set('ampbb-keep-yearly', r.keep_yearly);
-    showWithin(durationMinutes(r.keep_within));
-    set('ampbb-min-snapshots', r.min_snapshots);
+    /* A rule is on when it has a value, off when it has none. The box then
+     * shows the default rather than a bare zero, so that ticking it has an
+     * obvious meaning. */
+    const d = defaults.retention || {};
+    const count = (id, toggleId, value, fallback) => {
+        const on = (value || 0) > 0;
+        check(toggleId, on);
+        set(id, on ? value : (fallback || 0));
+    };
+    count('ampbb-keep-last', 'ampbb-keep-last-on', r.keep_last, d.keep_last);
+    count('ampbb-keep-hourly', 'ampbb-keep-hourly-on', r.keep_hourly, d.keep_hourly);
+    count('ampbb-keep-daily', 'ampbb-keep-daily-on', r.keep_daily, d.keep_daily);
+    count('ampbb-keep-weekly', 'ampbb-keep-weekly-on', r.keep_weekly, d.keep_weekly);
+    count('ampbb-keep-monthly', 'ampbb-keep-monthly-on', r.keep_monthly, d.keep_monthly);
+    count('ampbb-keep-yearly', 'ampbb-keep-yearly-on', r.keep_yearly, d.keep_yearly);
+    count('ampbb-min-snapshots', 'ampbb-min-snapshots-on', r.min_snapshots, d.min_snapshots);
+
+    const withinMinutes = durationMinutes(r.keep_within);
+    check('ampbb-within-on', withinMinutes > 0);
+    showWithin(withinMinutes > 0 ? withinMinutes : durationMinutes(d.keep_within));
+
+    const tags = r.keep_tags || [];
+    check('ampbb-keep-tags-on', tags.length > 0);
+    set('ampbb-keep-tags', (tags.length ? tags : (d.keep_tags || [])).join(', '));
 
     set('ampbb-exclusions', (x.patterns || []).join('\n'));
     check('ampbb-use-defaults', x.use_defaults);
@@ -658,6 +718,9 @@ function renderSettings() {
         '.ampbb-view[data-view="settings"] textarea, ' +
         '.ampbb-view[data-view="settings"] select, #ampbb-save-settings')
         .forEach((node) => { node.disabled = !editable; });
+    /* After the sweep, not before: it would otherwise re-enable the boxes of
+     * rules that are switched off. */
+    syncRetentionRows();
     if (!editable) {
         text(el('ampbb-settings-status'), 'Read-only: this AMP account may not change the schedule.');
     }
@@ -725,9 +788,33 @@ function showWithin(minutes) {
 }
 
 function withinDuration() {
+    if (!ruleIsOn('ampbb-within-on')) { return '0s'; }
     const amount = parseInt((el('ampbb-within-amount') || {}).value, 10) || 0;
     const unit = (el('ampbb-within-unit') || {}).value;
     return (unit === 'd' ? amount * 24 : amount) + 'h';
+}
+
+/* The retention half of the settings, read straight off the page. It is its
+ * own function because the preview asks for it on every keystroke, long
+ * before anything is saved. */
+function collectRetention() {
+    const number = (id) => { const n = el(id); return n ? (parseInt(n.value, 10) || 0) : 0; };
+    const ruled = (toggle, id) => (ruleIsOn(toggle) ? number(id) : 0);
+    const tags = ruleIsOn('ampbb-keep-tags-on')
+        ? ((el('ampbb-keep-tags') || {}).value || '').split(',').map((t) => t.trim()).filter(Boolean)
+        : [];
+
+    return {
+        keep_last: ruled('ampbb-keep-last-on', 'ampbb-keep-last'),
+        keep_hourly: ruled('ampbb-keep-hourly-on', 'ampbb-keep-hourly'),
+        keep_daily: ruled('ampbb-keep-daily-on', 'ampbb-keep-daily'),
+        keep_weekly: ruled('ampbb-keep-weekly-on', 'ampbb-keep-weekly'),
+        keep_monthly: ruled('ampbb-keep-monthly-on', 'ampbb-keep-monthly'),
+        keep_yearly: ruled('ampbb-keep-yearly-on', 'ampbb-keep-yearly'),
+        keep_within: withinDuration(),
+        keep_tags: tags,
+        min_snapshots: ruled('ampbb-min-snapshots-on', 'ampbb-min-snapshots'),
+    };
 }
 
 function collectSettings() {
@@ -751,17 +838,7 @@ function collectSettings() {
                 check: true, forget: true, prune: true, empty_trash: true,
             },
         },
-        retention: {
-            keep_last: number('ampbb-keep-last'),
-            keep_hourly: number('ampbb-keep-hourly'),
-            keep_daily: number('ampbb-keep-daily'),
-            keep_weekly: number('ampbb-keep-weekly'),
-            keep_monthly: number('ampbb-keep-monthly'),
-            keep_yearly: number('ampbb-keep-yearly'),
-            keep_within: withinDuration(),
-            keep_tags: (settings.retention || {}).keep_tags || [],
-            min_snapshots: number('ampbb-min-snapshots'),
-        },
+        retention: collectRetention(),
         exclusions: {
             use_defaults: checked('ampbb-use-defaults'),
             honour_amp: checked('ampbb-honour-amp'),
@@ -793,14 +870,33 @@ async function previewExclusions() {
     }
 }
 
+/* The preview measures the rules as they stand on screen, not as they were
+ * saved. That is what makes switching a rule off an informed decision rather
+ * than a guess: the cost appears while the box is still under the cursor. */
 async function loadRetentionPreview() {
-    if (!caps.read) { return; }
+    const host = el('ampbb-retention-preview');
+    if (!host || !caps.read) { return; }
     try {
-        const preview = await api('GET', '/retention/preview');
-        text(el('ampbb-retention-preview'), preview.would_forget === 0
-            ? 'Nothing would be forgotten right now.'
-            : preview.would_forget + ' snapshot(s) would be forgotten at the next housekeeping run.');
-    } catch (e) { text(el('ampbb-retention-preview'), e.message); }
+        const preview = settings
+            ? await api('POST', '/retention/preview', collectRetention())
+            : await api('GET', '/retention/preview');
+        host.className = 'ampbb-preview';
+        if (preview.would_forget === 0) {
+            text(host, 'These rules keep all ' + preview.snapshots + ' snapshot(s). Nothing would be forgotten.');
+            return;
+        }
+        text(host, 'These rules would forget ' + preview.would_forget + ' of ' +
+            preview.snapshots + ' snapshot(s) at the next housekeeping run, keeping ' +
+            preview.would_keep + '.');
+        /* Losing most of the repository in one pass is a thing somebody may
+         * well mean, and a thing nobody should do without noticing. */
+        if (preview.would_forget > preview.would_keep) {
+            host.className = 'ampbb-preview ampbb-banner-error';
+        }
+    } catch (e) {
+        text(host, e.message);
+        host.className = 'ampbb-preview ampbb-banner-error';
+    }
 }
 
 /* --- views ---------------------------------------------------------------- */
@@ -929,13 +1025,30 @@ function wire() {
     /* The retention preview is what makes those numbers mean anything, so it
      * follows every change rather than waiting for a save. */
     let retentionTimer = null;
-    document.querySelectorAll('.ampbb-view[data-view="settings"] input[type="number"], #ampbb-within-unit')
-        .forEach((node) => {
-            node.addEventListener('input', () => {
-                clearTimeout(retentionTimer);
-                retentionTimer = setTimeout(loadRetentionPreview, 400);
-            });
+    const previewSoon = () => {
+        clearTimeout(retentionTimer);
+        retentionTimer = setTimeout(loadRetentionPreview, 400);
+    };
+    document.querySelectorAll('.ampbb-view[data-view="settings"] input[type="number"], ' +
+        '#ampbb-keep-tags, #ampbb-within-unit')
+        .forEach((node) => { node.addEventListener('input', previewSoon); });
+    el('ampbb-within-unit').addEventListener('change', previewSoon);
+
+    /* Switching a rule on or off is a bigger change than typing a digit, so it
+     * asks straight away rather than waiting out the debounce. */
+    RETENTION_RULES.forEach((rule) => {
+        const toggle = el(rule.toggle);
+        if (!toggle) { return; }
+        toggle.addEventListener('change', () => {
+            syncRetentionRows();
+            if (toggle.checked) {
+                const input = el(rule.input);
+                if (input && !input.disabled) { input.focus(); input.select(); }
+            }
+            clearTimeout(retentionTimer);
+            loadRetentionPreview();
         });
+    });
 
     let previewTimer = null;
     for (const id of ['ampbb-exclusions', 'ampbb-use-defaults']) {
@@ -951,7 +1064,11 @@ async function boot() {
     await signIn();
     const loaded = await api('GET', '/settings');
     settings = loaded.settings;
-    defaults = { hot: loaded.default_hot || [], excludes: loaded.default_excludes || [] };
+    defaults = {
+        hot: loaded.default_hot || [],
+        excludes: loaded.default_excludes || [],
+        retention: loaded.default_retention || {},
+    };
     wire();
     renderSettings();
     await refresh();

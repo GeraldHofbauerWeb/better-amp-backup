@@ -352,6 +352,10 @@ func (s *server) handleGetSettings(w http.ResponseWriter, r *http.Request, _ *au
 		"settings":         s.Settings.Get(),
 		"default_hot":      ops.DefaultHotPatterns(),
 		"default_excludes": ops.DefaultExclusions(),
+		// The editor needs a number to put back when a rule is switched on
+		// again. Sending the built-in defaults keeps that answer in one place
+		// rather than hard-coding a second opinion into the script.
+		"default_retention": settings.Defaults().Retention,
 	})
 }
 
@@ -398,8 +402,25 @@ func (s *server) handleValidateExclusions(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, preview)
 }
 
+// handleRetentionPreview answers for the saved policy on GET, and for a
+// candidate one on POST.
+//
+// The candidate half is what makes the rules switchable with a straight face:
+// every rule can be turned off on its own, and turning one off is a decision
+// about which snapshots stop existing. That number has to be on screen while
+// the choice is being made, not discovered at half past four the next morning.
 func (s *server) handleRetentionPreview(w http.ResponseWriter, r *http.Request, _ *auth.Session) {
-	decisions, err := s.Ops.RetentionPreview()
+	var candidate *settings.Retention
+	if r.Method == http.MethodPost {
+		var body settings.Retention
+		if err := decodeJSON(r, &body); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error(), "")
+			return
+		}
+		candidate = &body
+	}
+
+	decisions, err := s.Ops.RetentionPreview(candidate)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error(), "")
 		return
@@ -410,7 +431,12 @@ func (s *server) handleRetentionPreview(w http.ResponseWriter, r *http.Request, 
 			doomed++
 		}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"decisions": decisions, "would_forget": doomed})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"decisions":    decisions,
+		"would_forget": doomed,
+		"would_keep":   len(decisions) - doomed,
+		"snapshots":    len(decisions),
+	})
 }
 
 // --- jobs -------------------------------------------------------------------

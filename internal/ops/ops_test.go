@@ -417,3 +417,59 @@ func indexPaths(t *testing.T, r *repo.Repository, id string) map[string]bool {
 	}
 	return out
 }
+
+// The retention preview has to answer for the rules being edited, not the ones
+// on disk. Switching a rule off is a decision about which snapshots stop
+// existing, and the only honest moment to show that number is before the save.
+func TestTheRetentionPreviewMeasuresTheCandidateRules(t *testing.T) {
+	runner, store, _ := newRunner(t, fixture(t))
+	var rec recorder
+
+	for i := 0; i < 3; i++ {
+		if _, err := runner.Backup(context.Background(), &rec, BackupRequest{Paranoid: true}); err != nil {
+			t.Fatalf("Backup %d: %v", i, err)
+		}
+	}
+
+	// The saved policy is the default one, which keeps everything this young.
+	saved, err := runner.RetentionPreview(nil)
+	if err != nil {
+		t.Fatalf("RetentionPreview(nil): %v", err)
+	}
+	for _, d := range saved {
+		if !d.Keep {
+			t.Fatalf("the default policy would forget %s, so this test cannot tell the two apart", d.Manifest.ID)
+		}
+	}
+
+	// Switch every rule off but "keep the last one" -- which is what unticking
+	// the rows in the tab produces -- and the answer has to change without
+	// anything having been written.
+	only := settings.Retention{KeepLast: 1, KeepWithin: "0s"}
+	candidate, err := runner.RetentionPreview(&only)
+	if err != nil {
+		t.Fatalf("RetentionPreview(candidate): %v", err)
+	}
+	var kept int
+	for _, d := range candidate {
+		if d.Keep {
+			kept++
+		}
+	}
+	if kept != 1 {
+		t.Errorf("the candidate rules kept %d snapshot(s), want 1", kept)
+	}
+	if store.Get().Retention.KeepLast != settings.Defaults().Retention.KeepLast {
+		t.Error("previewing a candidate policy changed the saved one")
+	}
+}
+
+// A rule set that keeps nothing is refused rather than previewed, so the tab
+// shows the refusal where the numbers would be instead of a cheerful zero.
+func TestAPolicyThatKeepsNothingIsRefused(t *testing.T) {
+	runner, _, _ := newRunner(t, fixture(t))
+	nothing := settings.Retention{KeepWithin: "0s"}
+	if _, err := runner.RetentionPreview(&nothing); err == nil {
+		t.Error("a policy with every rule switched off was accepted")
+	}
+}

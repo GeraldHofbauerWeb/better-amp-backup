@@ -448,10 +448,19 @@ func (r *Runner) applyRetention(ctx context.Context, dryRun bool) ([]repo.Decisi
 	return decisions, len(doomed), nil
 }
 
-// RetentionPreview reports what the current policy would forget, changing
-// nothing. It is what the settings editor shows before anything is applied.
-func (r *Runner) RetentionPreview() ([]repo.Decision, error) {
-	policy, err := r.Settings.Get().Retention.Policy()
+// RetentionPreview reports what a policy would forget, changing nothing. It is
+// what the settings editor shows before anything is applied.
+//
+// candidate is the rule set being edited, and may be nil for the saved one.
+// Measuring the candidate is the point: rules can be switched off one at a
+// time, and "which snapshots does that cost me" is a question that has to be
+// answerable before the save, not after it.
+func (r *Runner) RetentionPreview(candidate *settings.Retention) ([]repo.Decision, error) {
+	retention := r.Settings.Get().Retention
+	if candidate != nil {
+		retention = *candidate
+	}
+	policy, err := retention.Policy()
 	if err != nil {
 		return nil, err
 	}

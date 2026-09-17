@@ -165,3 +165,54 @@ func TestHiddenViewsStayHidden(t *testing.T) {
 		t.Error("the rule is not specific enough to beat .ampbb-settings-grid")
 	}
 }
+
+// Every rule in "how many backups to keep" can be switched off on its own, and
+// switching one off means storing a zero. A row whose tick box the script does
+// not know about would look switchable and silently keep applying -- a
+// retention rule that ignores its own switch deletes snapshots somebody
+// believed they had protected.
+func TestEveryRetentionRuleHasASwitchTheScriptKnowsAbout(t *testing.T) {
+	markup := asset(t, "tab.html")
+	script := asset(t, "Plugin.js")
+
+	section := markup[strings.Index(markup, `data-area="retention"`):]
+	section = section[:strings.Index(section, `data-area="exclusions"`)]
+
+	rows := strings.Split(section, `class="ampbb-row-setting"`)[1:]
+	if len(rows) < 8 {
+		t.Fatalf("found %d retention rows; the section has lost most of itself", len(rows))
+	}
+
+	table := script[strings.Index(script, "const RETENTION_RULES = ["):]
+	table = table[:strings.Index(table, "];")]
+
+	for _, row := range rows {
+		row = row[:strings.Index(row, "</div>")]
+		m := regexp.MustCompile(`id="([^"]+)" class="ampbb-rule-toggle"`).FindStringSubmatch(row)
+		if m == nil {
+			t.Errorf("a retention row has no switch:\n%s", strings.TrimSpace(row))
+			continue
+		}
+		if !strings.Contains(table, "'"+m[1]+"'") {
+			t.Errorf("the switch %q is not in RETENTION_RULES, so nothing reads it", m[1])
+		}
+	}
+}
+
+// Off has to reach the server as zero rather than as the number still showing
+// in the greyed-out box, which is the whole difference between a rule that is
+// switched off and one that is switched off on screen only.
+func TestSwitchedOffRulesCollectAsZero(t *testing.T) {
+	script := asset(t, "Plugin.js")
+	collect := script[strings.Index(script, "function collectRetention()"):]
+	collect = collect[:strings.Index(collect, "\n}")]
+
+	for _, needed := range []string{"ruleIsOn(toggle) ? number(id) : 0", "ruleIsOn('ampbb-keep-tags-on')"} {
+		if !strings.Contains(collect, needed) {
+			t.Errorf("collectRetention no longer contains %q", needed)
+		}
+	}
+	if !strings.Contains(script, "if (!ruleIsOn('ampbb-within-on')) { return '0s'; }") {
+		t.Error("the keep-everything-within rule cannot be switched off")
+	}
+}

@@ -135,6 +135,10 @@ func NewHandler(d Deps) (http.Handler, error) {
 	post("/jobs/housekeeping", auth.CapDestroy, s.handleRunHousekeeping)
 	post("/jobs/{id}/cancel", auth.CapRead, s.handleCancel)
 	post("/settings/validate", auth.CapSettings, s.handleValidateExclusions)
+	// The same handler as the GET above, with a rule set in the body: the
+	// editor asks what its unsaved policy would forget. It reads and answers,
+	// so reading is all it requires.
+	post("/retention/preview", auth.CapRead, s.handleRetentionPreview)
 	post("/instance/stop", auth.CapStop, s.handleStop)
 	post("/instance/start", auth.CapStart, s.handleStart)
 	post("/snapshots/{id}/forget", auth.CapDestroy, s.handleForget)
