@@ -356,7 +356,20 @@ func Open(path string, seed File) (*Store, error) {
 	}
 }
 
-// Path returns the file the store is backed by.
+// NewMemory returns a store that is not backed by a file.
+//
+// The CLI uses it: its flags describe one run, there is nothing to persist,
+// and it still has to assemble that run exactly the way the daemon does. An
+// Update on such a store validates and publishes but writes nowhere.
+func NewMemory(f File) (*Store, error) {
+	f.Version = Version
+	if err := f.Validate(); err != nil {
+		return nil, err
+	}
+	return &Store{cur: f}, nil
+}
+
+// Path returns the file the store is backed by, or "" for an in-memory one.
 func (s *Store) Path() string { return s.path }
 
 // Get returns the current settings.
@@ -426,5 +439,8 @@ func (s *Store) Subscribe() (<-chan File, func()) {
 }
 
 func (s *Store) write(f File) error {
+	if s.path == "" {
+		return nil
+	}
 	return atomicfile.WriteJSON(s.path, f, 0o640)
 }

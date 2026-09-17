@@ -14,12 +14,12 @@ import (
 	"time"
 
 	"github.com/GeraldHofbauerWeb/better-amp-backup/internal/amp"
-	"github.com/GeraldHofbauerWeb/better-amp-backup/internal/backup"
 	"github.com/GeraldHofbauerWeb/better-amp-backup/internal/exclude"
 	"github.com/GeraldHofbauerWeb/better-amp-backup/internal/format"
-	"github.com/GeraldHofbauerWeb/better-amp-backup/internal/quiesce"
+	"github.com/GeraldHofbauerWeb/better-amp-backup/internal/ops"
 	"github.com/GeraldHofbauerWeb/better-amp-backup/internal/repo"
 	"github.com/GeraldHofbauerWeb/better-amp-backup/internal/restore"
+	"github.com/GeraldHofbauerWeb/better-amp-backup/internal/settings"
 	"github.com/spf13/cobra"
 )
 
@@ -114,70 +114,51 @@ func newBackupCommand() *cobra.Command {
 					fmt.Printf("Instance %s lives at %s\n", instance, root)
 				}
 			}
-
-			quiescer := backup.Quiescer(backup.NoQuiesce{Reason: "not requested"})
-			if doQuiesce {
-				if ampClient == nil {
-					return errors.New("--quiesce needs --amp-url, --amp-user and a password")
-				}
-				pattern := quiesce.DefaultConfirmPattern
-				if confirmPat != "" {
-					if pattern, err = regexp.Compile(confirmPat); err != nil {
-						return fmt.Errorf("--confirm-pattern: %w", err)
-					}
-				}
-				quiescer = quiesce.NewConsole(ampClient, quiesce.Config{
-					ConfirmPattern: pattern,
-					SkipIfStopped:  true,
-					Log: func(format string, args ...any) {
-						fmt.Fprintf(os.Stderr, "quiesce: "+format+"\n", args...)
-					},
-				})
+			if doQuiesce && ampClient == nil {
+				return errors.New("--quiesce needs --amp-url, --amp-user and a password")
 			}
 
-			// Built-in rules come first so a user pattern can negate them.
-			var patterns []string
-			if useDefaults {
-				patterns = append(patterns, exclude.DefaultAMPExclusions...)
+			// The flags describe one run, so they become one set of settings.
+			// Going through the same assembly as the daemon is the point: a
+			// backup typed here and one started from the browser have to mean
+			// the same thing, and the only way to be sure is to have one
+			// implementation of "the same thing".
+			cfg := settings.Defaults()
+			cfg.Instance = settings.Instance{Name: instance, Root: root}
+			cfg.Schedule.Quiesce = doQuiesce
+			cfg.Exclusions = settings.Exclusions{
+				UseDefaults: useDefaults,
+				HonourAMP:   ampExclude,
+				Patterns:    excludes,
+				Hot:         hot,
 			}
-			patterns = append(patterns, excludes...)
-			if ampExclude {
-				found, err := exclude.CollectAMPExcludes(root)
-				if err != nil {
-					return fmt.Errorf("reading AMP exclusions: %w", err)
-				}
-				if len(found) > 0 && !quiet {
-					fmt.Printf("Honouring %d rule(s) from AMP's own %s files\n",
-						len(found), exclude.AMPExcludeFile)
-				}
-				patterns = append(patterns, found...)
-			}
-			excludeSet, err := exclude.Compile(patterns)
+			store, err := settings.NewMemory(cfg)
 			if err != nil {
 				return err
 			}
-			hotPatterns := hot
-			if len(hotPatterns) == 0 {
-				hotPatterns = exclude.DefaultHotPatterns
+
+			var pattern *regexp.Regexp
+			if confirmPat != "" {
+				if pattern, err = regexp.Compile(confirmPat); err != nil {
+					return fmt.Errorf("--confirm-pattern: %w", err)
+				}
 			}
-			hotSet, err := exclude.Compile(hotPatterns)
-			if err != nil {
-				return err
+
+			runner := &ops.Runner{
+				Repo:        r,
+				Settings:    store,
+				ToolVersion: Version,
+				Instance: func(context.Context) (*amp.Client, error) {
+					return ampClient, nil
+				},
 			}
 
 			started := time.Now()
-			m, err := backup.Run(ctx, r, backup.Options{
-				Instance:     instance,
-				Root:         root,
-				Exclude:      excludeSet,
-				Hot:          hotSet,
-				Tags:         tags,
-				Quiescer:     quiescer,
-				Paranoid:     paranoid,
-				SkipAbs:      []string{r.Root()},
-				ReserveBytes: reserveBytes(reserveGiB),
-				ToolVersion:  Version,
-				Progress:     progressPrinter(quiet),
+			m, err := runner.Backup(ctx, &cliProgress{quiet: quiet, last: time.Now()}, ops.BackupRequest{
+				Tags:           tags,
+				Paranoid:       paranoid,
+				ReserveBytes:   reserveBytes(reserveGiB),
+				ConfirmPattern: pattern,
 			})
 			if err != nil {
 				return err
@@ -210,24 +191,38 @@ func newBackupCommand() *cobra.Command {
 	return cmd
 }
 
-func progressPrinter(quiet bool) func(string, int, int) {
-	if quiet {
-		return nil
+// cliProgress renders an ops.Progress on a terminal.
+//
+// The throttle is the one the backup command always had: backup.Run reports
+// once per file, synchronously, and printing every one of those would make the
+// backup slower than the thing it replaced.
+type cliProgress struct {
+	quiet bool
+	// last starts at the moment the run does, not at the zero time, so the
+	// very first report is throttled like every other one.
+	last time.Time
+}
+
+func (p *cliProgress) Stage(stage string, done, total int) {
+	if p.quiet || total == 0 {
+		return
 	}
-	last := time.Now()
-	return func(stage string, done, total int) {
-		if total == 0 {
-			return
-		}
-		if done != total && time.Since(last) < 500*time.Millisecond {
-			return
-		}
-		last = time.Now()
-		fmt.Printf("\r  %-5s %d/%d", stage, done, total)
-		if done == total {
-			fmt.Println()
-		}
+	if done != total && time.Since(p.last) < 500*time.Millisecond {
+		return
 	}
+	p.last = time.Now()
+	fmt.Printf("\r  %-5s %d/%d", stage, done, total)
+	if done == total {
+		fmt.Println()
+	}
+}
+
+func (p *cliProgress) Logf(level, format string, args ...any) {
+	if p.quiet && level == "info" {
+		return
+	}
+	// Warnings and commentary go to stderr, so that stdout stays the summary.
+	fmt.Fprintf(os.Stderr, format+"\n", args...)
 }
 
 func printBackupSummary(m *repo.Manifest, wall time.Duration) {
