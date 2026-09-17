@@ -19,6 +19,18 @@ fragment rather than editing the panel's vhost: that file is AMP's, and an
 installer that silently rewrites somebody's reverse proxy is one nobody trusts
 twice.
 
+## The tab's own URL
+
+AMP builds a sidebar entry's URL from its display name: spaces and bracketed
+parts are stripped, the rest lower-cased. "Backups (amp-bb)" would therefore
+become `/backups` — the path AMP's own Backups tab already owns — and AMP
+resolves a path back to a tab by taking the first entry with that name, which
+would always be AMP's.
+
+The plugin overrides `shortName` after registering, so the tab lives at
+`/ampbb` while the sidebar still reads "Backups (amp-bb)". Nothing in nginx
+serves that path; it is a history entry the panel resolves for itself.
+
 ## Why there is a daemon at all
 
 Changing how often a backup runs has to work from a browser. The service runs

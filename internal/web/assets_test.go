@@ -114,3 +114,40 @@ func TestTheLoaderIsTinyAndDefensive(t *testing.T) {
 		t.Error("Loader.js does not guard against loading the plugin twice")
 	}
 }
+
+// AMP derives a sidebar entry's URL from its display name: spaces and anything
+// in brackets are stripped and the rest lower-cased (UI.js, SideMenuEntryVM).
+// "Backups (amp-bb)" therefore becomes /backups -- the path AMP's own Backups
+// tab already owns -- and its popstate handler resolves a path by taking the
+// first entry with that name, which would always be AMP's.
+//
+// So the plugin overrides shortName after registering. This checks that the
+// collision is still real and that the override is still there: if AMP ever
+// changes the derivation, the first half of this fails and says so.
+func TestTheTabDoesNotStealAMPsBackupsURL(t *testing.T) {
+	script := asset(t, "Plugin.js")
+
+	name := regexp.MustCompile(`Name: '([^']+)'`).FindStringSubmatch(script)
+	if name == nil {
+		t.Fatal("no tab name found in Plugin.js")
+	}
+	if derived := ampShortName(name[1]); derived != "backups" {
+		t.Errorf("the display name %q now derives to %q; if it no longer collides with AMP's own"+
+			" Backups tab, the override below can go", name[1], derived)
+	}
+
+	if !strings.Contains(script, "vm.shortName = 'ampbb'") {
+		t.Error("the tab no longer claims a URL of its own, so it would share AMP's /backups")
+	}
+	if !strings.Contains(script, "claimOurOwnURL()") {
+		t.Error("the override is never called")
+	}
+}
+
+// ampShortName mirrors UI.js: displayName.replaceAll(/ and .+$|[\s'!?]|\(.+?\)/g, ”).toLowerCase()
+func ampShortName(display string) string {
+	out := regexp.MustCompile(` and .+$`).ReplaceAllString(display, "")
+	out = regexp.MustCompile(`\(.+?\)`).ReplaceAllString(out, "")
+	out = regexp.MustCompile(`[\s'!?]`).ReplaceAllString(out, "")
+	return strings.ToLower(out)
+}

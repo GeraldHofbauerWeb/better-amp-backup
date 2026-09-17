@@ -12,7 +12,8 @@
  */
 
 const AMPBB_API = '/amp-bb/api';
-const AMPBB_TAB = '#tab_AmpBB_ampbb';
+const AMPBB_TAB_ID = 'tab_AmpBB_ampbb';
+const AMPBB_TAB = '#' + AMPBB_TAB_ID;
 
 let csrf = '';
 let caps = {};
@@ -945,6 +946,29 @@ async function boot() {
 
 /* --- the module AMP's loader expects -------------------------------------- */
 
+/* AMP turns a sidebar entry's display name into its URL by stripping spaces
+ * and anything in brackets, then lower-casing it (UI.js, SideMenuEntryVM). So
+ * "Backups (amp-bb)" becomes "/backups" -- exactly the path AMP's own Backups
+ * tab already owns. Worse, the popstate handler resolves a path with
+ * find(m => m.shortName == handler), which returns whichever entry was
+ * registered first: ours would be unreachable by URL, and a reload would land
+ * on AMP's Backups instead.
+ *
+ * shortName is a plain property, read when the entry is clicked rather than at
+ * construction, so overriding it afterwards is enough. The label stays as it
+ * reads best in the sidebar; only the path changes.
+ */
+function claimOurOwnURL() {
+    try {
+        if (typeof UI === 'undefined' || !UI.GetSideMenuItem) { return; }
+        const vm = UI.GetSideMenuItem(AMPBB_TAB_ID);
+        if (vm) { vm.shortName = 'ampbb'; }
+    } catch (err) {
+        // A tab that works but has a clashing URL beats no tab at all.
+        console.error('amp-bb: could not claim a URL of its own:', err);
+    }
+}
+
 this.stylesheet = 'amp-bb.css';
 
 this.tabs = [{
@@ -958,6 +982,7 @@ this.tabs = [{
 
 this.plugin = {
     PostInit: function () {
+        claimOurOwnURL();
         boot().catch((err) => {
             /* Failing visibly but harmlessly is the requirement: this is
              * injected into somebody else's panel, and an exception thrown
