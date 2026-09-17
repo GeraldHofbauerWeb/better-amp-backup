@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 )
 
 // State mirrors AMP's application state enum. Only the values a backup cares
@@ -180,6 +181,124 @@ func (c *Client) GetAPISpec(ctx context.Context) (map[string]map[string]any, err
 		return nil, err
 	}
 	return spec, nil
+}
+
+// coreModule holds the methods every AMP endpoint has, controller or instance.
+const coreModule = "Core"
+
+// Control names the methods this AMP build exposes for the application's
+// lifecycle, as discovered from a permission-filtered API spec.
+//
+// An empty field means the caller may not do that thing. GetAPISpec omits what
+// the session is not allowed to call, which makes the spec a capability list
+// as well as a compatibility check -- so this is how the web interface decides
+// whether to show a stop button, rather than by trying and reporting a failure.
+type Control struct {
+	Start   string
+	Stop    string
+	Restart string
+}
+
+// ControlMethods reads the lifecycle methods out of an API spec.
+func ControlMethods(spec map[string]map[string]any) Control {
+	var ctl Control
+	for _, candidate := range []struct {
+		field  *string
+		module string
+		method string
+	}{
+		{&ctl.Start, coreModule, "Start"},
+		{&ctl.Stop, coreModule, "Stop"},
+		{&ctl.Restart, coreModule, "Restart"},
+	} {
+		if HasMethod(spec, candidate.module, candidate.method) {
+			*candidate.field = candidate.module + "." + candidate.method
+		}
+	}
+	return ctl
+}
+
+// CanStart and CanStop report whether the spec this Control came from allowed
+// the call at all.
+func (c Control) CanStart() bool { return c.Start != "" }
+func (c Control) CanStop() bool  { return c.Stop != "" }
+
+// StartApplication asks AMP to start the application.
+//
+// The method name comes from ctl rather than being written here, because a
+// spec that does not list it means this session may not make the call --
+// refusing locally gives a better error than AMP's generic one, and does not
+// depend on guessing what a future build renamed it to.
+func (c *Client) StartApplication(ctx context.Context, ctl Control) error {
+	return c.control(ctx, ctl.Start, "start")
+}
+
+// StopApplication asks AMP to stop the application. It returns as soon as AMP
+// accepts the request; the application is still running at that point.
+func (c *Client) StopApplication(ctx context.Context, ctl Control) error {
+	return c.control(ctx, ctl.Stop, "stop")
+}
+
+// RestartApplication asks AMP to restart the application.
+func (c *Client) RestartApplication(ctx context.Context, ctl Control) error {
+	return c.control(ctx, ctl.Restart, "restart")
+}
+
+func (c *Client) control(ctx context.Context, qualified, verb string) error {
+	if qualified == "" {
+		return fmt.Errorf("amp: this session may not %s the application", verb)
+	}
+	module, method, ok := strings.Cut(qualified, ".")
+	if !ok {
+		return fmt.Errorf("amp: malformed control method %q", qualified)
+	}
+	return c.Call(ctx, module, method, nil, nil)
+}
+
+// WaitForState polls until the application reaches want, or ctx is done.
+//
+// It exists because stopping is not an event but a process: StopApplication
+// returns while the server is still saving its world, and anything that writes
+// into the instance directory before it has finished is corrupting a backup it
+// is supposed to be restoring.
+func (c *Client) WaitForState(ctx context.Context, want State, poll time.Duration) error {
+	if poll <= 0 {
+		poll = time.Second
+	}
+	ticker := time.NewTicker(poll)
+	defer ticker.Stop()
+
+	last := State(-1)
+	for {
+		status, err := c.GetStatus(ctx)
+		switch {
+		case err == nil:
+			if status.State == want {
+				return nil
+			}
+			last = status.State
+		case ctx.Err() != nil:
+			// The deadline landed mid-request. Report what we were waiting
+			// for, not the transport error, which says nothing useful.
+			return waitedInVain(want, last, ctx.Err())
+		default:
+			return err
+		}
+
+		select {
+		case <-ctx.Done():
+			return waitedInVain(want, last, ctx.Err())
+		case <-ticker.C:
+		}
+	}
+}
+
+func waitedInVain(want, last State, cause error) error {
+	seen := "nothing yet"
+	if last >= 0 {
+		seen = last.String()
+	}
+	return fmt.Errorf("amp: gave up waiting for %s; last saw %s: %w", want, seen, cause)
 }
 
 // HasMethod reports whether a module and method are present in a spec.

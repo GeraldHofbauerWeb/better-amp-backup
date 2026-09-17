@@ -50,6 +50,24 @@ type Server struct {
 
 	// Logins counts successful Core.Login calls.
 	Logins int
+
+	// InstanceID, when set, makes this fake behave like a controller that
+	// proxies to one instance: calls arriving under
+	// /API/ADSModule/Servers/<InstanceID>/API/... are served, and calls to any
+	// other instance id are refused the way AMP refuses an unknown one.
+	InstanceID string
+	// RequireProxy refuses calls that do not go through the instance proxy, so
+	// a test can prove a client actually routed through it.
+	RequireProxy bool
+
+	// Spec is what Core.GetAPISpec returns. AMP filters this by the caller's
+	// permissions, which is why the tool reads capabilities out of it rather
+	// than hard-coding method names -- so a test needs to be able to hand back
+	// a smaller spec and see the caller adapt.
+	Spec map[string]map[string]any
+
+	// ProxiedCalls records every call that arrived through the instance proxy.
+	ProxiedCalls []string
 }
 
 // New starts a fake panel. Close it with Close.
@@ -61,9 +79,68 @@ func New(username, password string) *Server {
 		state:            20, // ready
 		SaveConfirmation: "[Server thread/INFO]: Saved the game",
 		flushPattern:     regexp.MustCompile(`save-all`),
+		Spec:             DefaultSpec(),
 	}
 	s.Server = httptest.NewServer(http.HandlerFunc(s.handle))
 	return s
+}
+
+// DefaultSpec is the API surface a fully privileged session sees.
+func DefaultSpec() map[string]map[string]any {
+	return map[string]map[string]any{
+		"Core": {
+			"Login":              map[string]any{},
+			"GetStatus":          map[string]any{},
+			"GetUpdates":         map[string]any{},
+			"SendConsoleMessage": map[string]any{},
+			"GetAPISpec":         map[string]any{},
+			"Start":              map[string]any{},
+			"Stop":               map[string]any{},
+			"Restart":            map[string]any{},
+		},
+		"ADSModule": {"GetLocalInstances": map[string]any{}},
+		"LocalFileBackupPlugin": {
+			"GetBackups":        map[string]any{},
+			"RefreshBackupList": map[string]any{},
+		},
+	}
+}
+
+// BackupAccountSpec is what the deliberately narrow service account sees: it
+// may read and write the console, and nothing else. Notably it may not start
+// or stop the application, which is the property the deployment relies on.
+func BackupAccountSpec() map[string]map[string]any {
+	return map[string]map[string]any{
+		"Core": {
+			"Login":              map[string]any{},
+			"GetStatus":          map[string]any{},
+			"GetUpdates":         map[string]any{},
+			"SendConsoleMessage": map[string]any{},
+			"GetAPISpec":         map[string]any{},
+		},
+	}
+}
+
+// AddSession registers a session id without a login, standing in for one the
+// panel issued to a person and handed to us.
+func (s *Server) AddSession(id string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.sessions[id] = true
+}
+
+// RevokeSession drops a session, as AMP does when it expires.
+func (s *Server) RevokeSession(id string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.sessions, id)
+}
+
+// ProxiedCallLog returns a copy of the calls that arrived through the proxy.
+func (s *Server) ProxiedCallLog() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string(nil), s.ProxiedCalls...)
 }
 
 // SetState changes the reported application state.
@@ -89,11 +166,42 @@ func (s *Server) EmitConsole(line string) {
 
 func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
-	if len(parts) != 3 || parts[0] != "API" {
+	if len(parts) == 0 || parts[0] != "API" {
+		http.NotFound(w, r)
+		return
+	}
+
+	// AMP's controller proxies to an instance under
+	// /API/ADSModule/Servers/<id>/API/<Module>/<Method>. The panel uses that
+	// path for everything once you open an instance, so the double has to
+	// serve it -- and has to refuse an id it does not host, because a client
+	// pointed at the wrong instance otherwise looks like it is working.
+	proxied := false
+	if len(parts) == 7 && parts[1] == "ADSModule" && parts[2] == "Servers" && parts[4] == "API" {
+		if s.InstanceID == "" || parts[3] != s.InstanceID {
+			writeJSON(w, map[string]any{"Title": "Unauthorized Access", "Status": false,
+				"Message": fmt.Sprintf("No instance with ID %s", parts[3])})
+			return
+		}
+		proxied = true
+		parts = []string{"API", parts[5], parts[6]}
+	}
+	if len(parts) != 3 {
 		http.NotFound(w, r)
 		return
 	}
 	module, method := parts[1], parts[2]
+
+	if s.RequireProxy && !proxied {
+		writeJSON(w, map[string]any{"Title": "Unauthorized Access", "Status": false,
+			"Message": "this endpoint is only reachable through the instance proxy"})
+		return
+	}
+	if proxied {
+		s.mu.Lock()
+		s.ProxiedCalls = append(s.ProxiedCalls, module+"."+method)
+		s.mu.Unlock()
+	}
 
 	params := map[string]any{}
 	if r.Body != nil {
@@ -199,20 +307,26 @@ func (s *Server) dispatch(module, method string, params map[string]any) any {
 		}}
 
 	case "Core.GetAPISpec":
-		return map[string]any{
-			"Core": map[string]any{
-				"Login":              map[string]any{},
-				"GetStatus":          map[string]any{},
-				"GetUpdates":         map[string]any{},
-				"SendConsoleMessage": map[string]any{},
-				"GetAPISpec":         map[string]any{},
-			},
-			"ADSModule": map[string]any{"GetLocalInstances": map[string]any{}},
-			"LocalFileBackupPlugin": map[string]any{
-				"GetBackups":        map[string]any{},
-				"RefreshBackupList": map[string]any{},
-			},
+		return s.Spec
+
+	case "Core.Start", "Core.Stop", "Core.Restart":
+		// AMP filters the spec by permission, so a method missing from it is
+		// one this session may not call. The fake enforces that, or a test
+		// would pass against a panel that would have refused.
+		if _, ok := s.Spec["Core"][method]; !ok {
+			return map[string]any{"Title": "Unauthorized Access", "Status": false,
+				"Message": "You do not have permission to use this method at this time."}
 		}
+		// Stopping is a process, not an event: AMP returns immediately and the
+		// application settles afterwards. The state moves one step here so a
+		// caller that does not wait sees the intermediate value it deserves.
+		switch method {
+		case "Start":
+			s.state = 10 // starting
+		case "Stop", "Restart":
+			s.state = 40 // stopping
+		}
+		return map[string]any{"Status": "Success"}
 	}
 	return map[string]any{"Status": "Success"}
 }
