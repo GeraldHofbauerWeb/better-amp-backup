@@ -198,7 +198,9 @@ select.ampbb-addon { width: 7.5rem; cursor: pointer; opacity: 1; }
 .ampbb-settings-grid > [data-area="retention"]  { grid-column: 1; grid-row: 1 / span 2; }
 .ampbb-settings-grid > [data-area="schedule"]   { grid-column: 2; grid-row: 1; }
 .ampbb-settings-grid > [data-area="exclusions"] { grid-column: 2; grid-row: 2; }
-.ampbb-settings-grid > [data-area="actions"]    { grid-column: 1 / -1; }
+/* The save button belongs to both columns, so it sits under the middle of
+   them rather than under the left one. */
+.ampbb-settings-grid > [data-area="actions"]    { grid-column: 1 / -1; justify-content: center; }
 @media (max-width: 1100px) {
   .ampbb-settings-grid { display: block; }
 }
