@@ -244,7 +244,7 @@ func ampChecks(ctx context.Context, cfg *ampFlags, instance, root string) []chec
 			return out
 		}
 		var err error
-		if root, err = resolveRoot(ctx, client, instance); err != nil {
+		if root, err = client.ResolveInstanceRoot(ctx, instance); err != nil {
 			out = append(out, check{"instance " + instance, err.Error(), levelFail})
 			return out
 		}

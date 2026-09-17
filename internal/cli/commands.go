@@ -107,7 +107,7 @@ func newBackupCommand() *cobra.Command {
 				if ampClient == nil {
 					return errors.New("pass --root, or --amp-url so the instance directory can be looked up")
 				}
-				if root, err = resolveRoot(ctx, ampClient, instance); err != nil {
+				if root, err = ampClient.ResolveInstanceRoot(ctx, instance); err != nil {
 					return err
 				}
 				if !quiet {

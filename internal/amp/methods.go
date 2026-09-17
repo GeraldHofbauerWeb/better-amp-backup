@@ -143,6 +143,34 @@ func (c *Client) GetLocalInstances(ctx context.Context) ([]Instance, error) {
 	return out, nil
 }
 
+// ResolveInstanceRoot asks AMP where an instance lives, so that a datastore
+// layout this tool has never seen still works and no path is guessed.
+//
+// The name is matched against both the instance name and the friendly name,
+// case-insensitively, because AMP shows the friendly one in the panel and the
+// other on disk -- and the two routinely differ.
+func (c *Client) ResolveInstanceRoot(ctx context.Context, instance string) (string, error) {
+	instances, err := c.GetLocalInstances(ctx)
+	if err != nil {
+		return "", fmt.Errorf("listing instances: %w", err)
+	}
+	var names []string
+	for _, in := range instances {
+		names = append(names, in.InstanceName)
+		if !strings.EqualFold(in.InstanceName, instance) && !strings.EqualFold(in.FriendlyName, instance) {
+			continue
+		}
+		dir := in.Directory()
+		if dir == "" {
+			return "", fmt.Errorf("AMP reported instance %q but no directory for it; pass --root explicitly",
+				instance)
+		}
+		return dir, nil
+	}
+	return "", fmt.Errorf("AMP does not know an instance named %q (it lists: %s)",
+		instance, strings.Join(names, ", "))
+}
+
 // GetAPISpec returns the live API surface of this AMP build. It is what
 // `amp-bb doctor` uses to check that the methods this tool relies on exist,
 // instead of discovering a rename halfway through a backup.

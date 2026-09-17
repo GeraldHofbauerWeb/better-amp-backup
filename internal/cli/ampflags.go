@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -75,28 +74,4 @@ func (a *ampFlags) client() (*amp.Client, error) {
 		Timeout:            a.timeout,
 		InsecureSkipVerify: a.insecure,
 	})
-}
-
-// resolveRoot asks AMP where an instance lives, so that a datastore layout
-// this tool has never seen still works and no path is guessed.
-func resolveRoot(ctx context.Context, c *amp.Client, instance string) (string, error) {
-	instances, err := c.GetLocalInstances(ctx)
-	if err != nil {
-		return "", fmt.Errorf("listing instances: %w", err)
-	}
-	var names []string
-	for _, in := range instances {
-		names = append(names, in.InstanceName)
-		if !strings.EqualFold(in.InstanceName, instance) && !strings.EqualFold(in.FriendlyName, instance) {
-			continue
-		}
-		dir := in.Directory()
-		if dir == "" {
-			return "", fmt.Errorf("AMP reported instance %q but no directory for it; pass --root explicitly",
-				instance)
-		}
-		return dir, nil
-	}
-	return "", fmt.Errorf("AMP does not know an instance named %q (it lists: %s)",
-		instance, strings.Join(names, ", "))
 }
