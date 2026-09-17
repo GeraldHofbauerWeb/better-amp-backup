@@ -23,8 +23,9 @@ import (
 var hotPatterns = []string{"**/survival_world/**", "**/level.dat*", "**/playerdata/**", "**/*.mca"}
 
 // buildFixture writes a tree that exercises the awkward cases: an empty file,
-// an empty directory, a symlink, unusual permissions, a name with spaces and
-// non-ASCII characters, and region-file-shaped incompressible blobs.
+// an empty directory, a symlink, unusual permissions, names with spaces,
+// non-ASCII characters and glob metacharacters, and region-file-shaped
+// incompressible blobs.
 func buildFixture(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
@@ -46,6 +47,9 @@ func buildFixture(t *testing.T) string {
 	write("Minecraft/empty.dat", nil, 0o644)
 	write("Minecraft/mods/Vanilla Plus Additions.jar", randomBytes(32<<10, 1), 0o644)
 	write("Minecraft/config/größe-täst.toml", []byte("wert = \"ümlaut\"\n"), 0o644)
+	// A name full of glob metacharacters. Modpack jars really look like this,
+	// and no pattern the exclude engine can compile selects this file alone.
+	write("Minecraft/mods/[1.21.1] Awkward [Name].jar", randomBytes(4<<10, 7), 0o644)
 	write("Minecraft/survival_world/level.dat", randomBytes(4<<10, 2), 0o644)
 	for i := 0; i < 6; i++ {
 		write(fmt.Sprintf("Minecraft/survival_world/region/r.%d.0.mca", i),
@@ -471,4 +475,102 @@ func captureStderr(t *testing.T) func() string {
 	}
 	t.Cleanup(func() { collect() })
 	return collect
+}
+
+// The case --include cannot express. The exclude engine has no escape for its
+// metacharacters, so there is no pattern that selects this jar and only this
+// jar; a path says exactly what it means.
+func TestIncludePathTakesNamesLiterally(t *testing.T) {
+	src := buildFixture(t)
+	r := newRepo(t)
+	m := takeSnapshot(t, r, src)
+
+	dst := filepath.Join(t.TempDir(), "one-file")
+	rep, err := Run(context.Background(), r, Options{
+		Snapshot: m.ID, Target: dst,
+		IncludePaths: []string{"Minecraft/mods/[1.21.1] Awkward [Name].jar"},
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if rep.Files != 1 {
+		t.Errorf("restored %d files, want exactly 1", rep.Files)
+	}
+
+	want := filepath.Join(dst, "Minecraft", "mods", "[1.21.1] Awkward [Name].jar")
+	got, err := os.ReadFile(want)
+	if err != nil {
+		t.Fatalf("selected file was not restored: %v", err)
+	}
+	original, err := os.ReadFile(filepath.Join(src, "Minecraft", "mods", "[1.21.1] Awkward [Name].jar"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, original) {
+		t.Error("restored content differs from the source")
+	}
+	// The sibling in the same directory must be untouched.
+	if _, err := os.Stat(filepath.Join(dst, "Minecraft", "mods", "Vanilla Plus Additions.jar")); !os.IsNotExist(err) {
+		t.Error("restore reached past the selected path")
+	}
+}
+
+// Selecting a directory takes everything under it and nothing beside it. This
+// is the shape a ticked checkbox produces, and the reason the browser sends a
+// minimal cover rather than every path below it.
+func TestIncludePathTakesWholeSubtrees(t *testing.T) {
+	src := buildFixture(t)
+	r := newRepo(t)
+	m := takeSnapshot(t, r, src)
+
+	dst := filepath.Join(t.TempDir(), "world-only")
+	if _, err := Run(context.Background(), r, Options{
+		Snapshot: m.ID, Target: dst,
+		IncludePaths: []string{"Minecraft/survival_world"},
+	}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(dst, "Minecraft", "survival_world", "playerdata", "uuid.dat")); err != nil {
+		t.Errorf("a file deep in the selected subtree is missing: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dst, "Minecraft", "server.properties")); !os.IsNotExist(err) {
+		t.Error("restore wrote a sibling of the selected subtree")
+	}
+	// The ancestor directory has to exist so the subtree can live in it.
+	if info, err := os.Stat(filepath.Join(dst, "Minecraft")); err != nil || !info.IsDir() {
+		t.Errorf("ancestor directory missing: %v", err)
+	}
+}
+
+// Restoring nothing and reporting success is the worst outcome this command
+// has: the operator believes their world is back.
+func TestIncludePathThatMatchesNothingFails(t *testing.T) {
+	src := buildFixture(t)
+	r := newRepo(t)
+	m := takeSnapshot(t, r, src)
+
+	_, err := Run(context.Background(), r, Options{
+		Snapshot: m.ID, Target: filepath.Join(t.TempDir(), "nothing"),
+		IncludePaths: []string{"Minecraft/survival_world", "Minecraft/does-not-exist"},
+	})
+	if err == nil {
+		t.Fatal("a selection naming a path the snapshot does not hold must fail")
+	}
+	if !strings.Contains(err.Error(), "does-not-exist") {
+		t.Errorf("error should name the missing path, got: %v", err)
+	}
+}
+
+// Two filters that disagree is a bug report waiting to happen.
+func TestIncludeAndIncludePathAreExclusive(t *testing.T) {
+	r := newRepo(t)
+	_, err := Run(context.Background(), r, Options{
+		Snapshot: "20260907T170000Z-aaaaaa", Target: t.TempDir(),
+		Include:      exclude.MustCompile([]string{"Minecraft"}),
+		IncludePaths: []string{"Minecraft"},
+	})
+	if err == nil || !strings.Contains(err.Error(), "not both") {
+		t.Errorf("expected a refusal to combine the two filters, got: %v", err)
+	}
 }

@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/GeraldHofbauerWeb/better-amp-backup/internal/exclude"
@@ -31,6 +32,17 @@ type Options struct {
 
 	// Include, when set, restricts the restore to matching paths.
 	Include *exclude.Set
+
+	// IncludePaths, when non-empty, restricts the restore to these exact
+	// snapshot-relative paths and everything beneath each of them.
+	//
+	// This is deliberately not Include. A checked box in a file browser is a
+	// path, not a pattern, and a filename holding a glob metacharacter -- a
+	// modpack is full of them -- cannot survive the round trip through one.
+	//
+	// Setting both this and Include is an error rather than a union: two
+	// filters that disagree is a bug report waiting to happen.
+	IncludePaths []string
 
 	// DryRun plans the restore and reports it without touching the target.
 	DryRun bool
@@ -73,6 +85,14 @@ func Run(ctx context.Context, r *repo.Repository, opts Options) (*Report, error)
 		opts.Progress = func(int, int) {}
 	}
 
+	if opts.Include != nil && len(opts.IncludePaths) > 0 {
+		return nil, errors.New("restore: pass either Include or IncludePaths, not both")
+	}
+	sel, err := newSelection(opts.IncludePaths)
+	if err != nil {
+		return nil, err
+	}
+
 	m, err := r.LoadManifest(opts.Snapshot)
 	if err != nil {
 		return nil, err
@@ -89,9 +109,17 @@ func Run(ctx context.Context, r *repo.Repository, opts Options) (*Report, error)
 		return nil, err
 	}
 
-	entries, err := collect(r, m.ID, opts.Include)
+	entries, err := collect(r, m.ID, opts.Include, sel)
 	if err != nil {
 		return nil, err
+	}
+	// A selection that matched nothing would restore nothing and say it
+	// succeeded, which is the worst outcome this command has.
+	if sel != nil {
+		if missing := sel.unmatched(); len(missing) > 0 {
+			return nil, fmt.Errorf("restore: snapshot %s holds no %s",
+				m.ID, strings.Join(missing, ", "))
+		}
 	}
 
 	rep := &Report{DryRun: opts.DryRun}
@@ -175,7 +203,7 @@ func countEntry(rep *Report, e repo.Entry) {
 	}
 }
 
-func collect(r *repo.Repository, id string, include *exclude.Set) ([]repo.Entry, error) {
+func collect(r *repo.Repository, id string, include *exclude.Set, sel *selection) ([]repo.Entry, error) {
 	ir, closeIdx, err := r.OpenIndex(id)
 	if err != nil {
 		return nil, err
@@ -192,6 +220,9 @@ func collect(r *repo.Repository, id string, include *exclude.Set) ([]repo.Entry,
 			return nil, err
 		}
 		if include != nil && !include.Match(e.Path) {
+			continue
+		}
+		if sel != nil && !sel.keep(e) {
 			continue
 		}
 		out = append(out, e)
@@ -349,7 +380,7 @@ func applyTimes(target string, entries []repo.Entry) error {
 // every difference. This is what turns "the restore ran" into "the restore is
 // provably identical to what was backed up".
 func Verify(ctx context.Context, r *repo.Repository, snapshot, target string) ([]string, error) {
-	entries, err := collect(r, snapshot, nil)
+	entries, err := collect(r, snapshot, nil, nil)
 	if err != nil {
 		return nil, err
 	}

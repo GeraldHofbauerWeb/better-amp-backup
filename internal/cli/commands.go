@@ -300,11 +300,12 @@ func newSnapshotsCommand() *cobra.Command {
 
 func newRestoreCommand() *cobra.Command {
 	var (
-		target    string
-		include   []string
-		dryRun    bool
-		overwrite bool
-		times     bool
+		target       string
+		include      []string
+		includePaths []string
+		dryRun       bool
+		overwrite    bool
+		times        bool
 	)
 	cmd := &cobra.Command{
 		Use:   "restore <snapshot>",
@@ -329,7 +330,8 @@ func newRestoreCommand() *cobra.Command {
 			}
 
 			rep, err := restore.Run(ctx, r, restore.Options{
-				Snapshot: args[0], Target: target, Include: includeSet,
+				Snapshot: args[0], Target: target,
+				Include: includeSet, IncludePaths: includePaths,
 				DryRun: dryRun, Overwrite: overwrite, RestoreTimes: times,
 			})
 			if err != nil {
@@ -354,7 +356,9 @@ func newRestoreCommand() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&target, "target", "", "directory to restore into")
-	cmd.Flags().StringArrayVar(&include, "include", nil, "only restore matching paths (repeatable)")
+	cmd.Flags().StringArrayVar(&include, "include", nil, "only restore paths matching this glob (repeatable)")
+	cmd.Flags().StringArrayVar(&includePaths, "include-path", nil,
+		"only restore this exact path and what is under it (repeatable; takes names literally, unlike --include)")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "report what would happen and stop")
 	cmd.Flags().BoolVar(&overwrite, "overwrite", false, "allow writing into a non-empty target")
 	cmd.Flags().BoolVar(&times, "times", true, "restore modification times")
