@@ -98,16 +98,16 @@ const DefaultGracePeriod = time.Hour
 
 // PruneReport is what a prune did, or would have done.
 type PruneReport struct {
-	LiveSnapshots     int
-	TrashedSnapshots  int
-	ReferencedObjects int
-	TotalObjects      int
-	DeletedObjects    int
-	FreedBytes        int64
+	LiveSnapshots     int   `json:"live_snapshots"`
+	TrashedSnapshots  int   `json:"trashed_snapshots"`
+	ReferencedObjects int   `json:"referenced_objects"`
+	TotalObjects      int   `json:"total_objects"`
+	DeletedObjects    int   `json:"deleted_objects"`
+	FreedBytes        int64 `json:"freed_bytes"`
 	// Spared counts unreferenced objects left alone because they were younger
 	// than the grace period.
-	SparedRecent int
-	DryRun       bool
+	SparedRecent int  `json:"spared_recent"`
+	DryRun       bool `json:"dry_run"`
 }
 
 // Prune deletes objects that no live snapshot references.

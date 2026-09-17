@@ -11,6 +11,11 @@ import (
 // and getting clever here would only surprise them.
 //
 // A snapshot is kept if *any* rule wants it. Rules do not compete.
+//
+// It deliberately carries no JSON tags. KeepWithin is a time.Duration, which
+// marshals as a count of nanoseconds -- unreadable in an API response and
+// worse in a settings file a person may edit by hand. Anything that has to
+// serialise a policy mirrors it with a type of its own and converts.
 type Policy struct {
 	// KeepLast keeps the N most recent snapshots regardless of their age.
 	KeepLast int
@@ -67,11 +72,11 @@ func (p Policy) Validate() error {
 
 // Decision explains what a policy concluded about one snapshot.
 type Decision struct {
-	Manifest Manifest
-	Keep     bool
+	Manifest Manifest `json:"manifest"`
+	Keep     bool     `json:"keep"`
 	// Reasons lists every rule that wanted this snapshot kept, so an operator
 	// can see why `forget` chose what it chose instead of trusting it blindly.
-	Reasons []string
+	Reasons []string `json:"reasons,omitempty"`
 }
 
 // Apply partitions snapshots into keep and remove sets.

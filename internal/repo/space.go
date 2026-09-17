@@ -9,8 +9,8 @@ import (
 type SpaceInfo struct {
 	// AvailableBytes is what an unprivileged process may still use, which is
 	// what matters here — not the root-reserved total.
-	AvailableBytes uint64
-	TotalBytes     uint64
+	AvailableBytes uint64 `json:"available_bytes"`
+	TotalBytes     uint64 `json:"total_bytes"`
 }
 
 // UsedPercent reports how full the filesystem is.

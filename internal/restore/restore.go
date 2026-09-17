@@ -59,21 +59,21 @@ type Options struct {
 
 // Report is what a restore produced.
 type Report struct {
-	Files    int
-	Dirs     int
-	Symlinks int
-	Bytes    int64
+	Files    int   `json:"files"`
+	Dirs     int   `json:"dirs"`
+	Symlinks int   `json:"symlinks"`
+	Bytes    int64 `json:"bytes"`
 	// Verified counts files whose content hash matched the index.
-	Verified int
-	Skipped  int
-	DryRun   bool
+	Verified int  `json:"verified"`
+	Skipped  int  `json:"skipped"`
+	DryRun   bool `json:"dry_run"`
 
 	// Warnings carries what the operator has to know but that did not stop the
 	// restore -- so far, only that the source snapshot was partial. A library
 	// reports such a thing; it does not write to stderr, because under the
 	// daemon stderr is the journal and nobody watching a restore in a browser
 	// will ever look there.
-	Warnings []string
+	Warnings []string `json:"warnings,omitempty"`
 }
 
 // Run restores a snapshot.

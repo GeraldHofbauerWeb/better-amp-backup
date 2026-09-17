@@ -21,11 +21,11 @@ type CheckOptions struct {
 
 // CheckReport summarises a check.
 type CheckReport struct {
-	Snapshots int
+	Snapshots int `json:"snapshots"`
 	// Objects counts distinct referenced objects.
-	Objects  int
-	Rehashed int
-	Problems []string
+	Objects  int      `json:"objects"`
+	Rehashed int      `json:"rehashed"`
+	Problems []string `json:"problems,omitempty"`
 }
 
 // Check verifies the repository.
