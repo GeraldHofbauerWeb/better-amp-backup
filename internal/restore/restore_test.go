@@ -3,10 +3,14 @@ package restore
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"math/rand"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -358,4 +362,113 @@ func TestRestoreRequiresTarget(t *testing.T) {
 	if _, err := Run(context.Background(), r, Options{Snapshot: "x"}); err == nil {
 		t.Error("restore accepted an empty target")
 	}
+}
+
+// A partial snapshot is restorable but imperfect, and the operator has to be
+// told. That used to happen with a Fprintf to os.Stderr from inside the
+// library, which under the daemon means the journal -- the one place nobody
+// watching a restore in a browser will look. It travels in the report now.
+func TestPartialSnapshotWarnsThroughTheReport(t *testing.T) {
+	src := buildFixture(t)
+	r := newRepo(t)
+	m := takeSnapshot(t, r, src)
+	markPartial(t, r, m.ID)
+
+	stderr := captureStderr(t)
+	rep, err := Run(context.Background(), r, Options{
+		Snapshot: m.ID,
+		Target:   filepath.Join(t.TempDir(), "restored"),
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(rep.Warnings) != 1 {
+		t.Fatalf("Warnings = %v, want exactly one", rep.Warnings)
+	}
+	if !strings.Contains(rep.Warnings[0], "partial") || !strings.Contains(rep.Warnings[0], m.ID) {
+		t.Errorf("warning should name the snapshot and its state, got %q", rep.Warnings[0])
+	}
+	if got := stderr(); got != "" {
+		t.Errorf("the library wrote to stderr: %q", got)
+	}
+}
+
+// A dry run is where someone looks before committing to the real thing, so the
+// warning has to reach them there too.
+func TestPartialSnapshotWarnsOnADryRun(t *testing.T) {
+	src := buildFixture(t)
+	r := newRepo(t)
+	m := takeSnapshot(t, r, src)
+	markPartial(t, r, m.ID)
+
+	rep, err := Run(context.Background(), r, Options{
+		Snapshot: m.ID, Target: filepath.Join(t.TempDir(), "restored"), DryRun: true,
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(rep.Warnings) != 1 {
+		t.Errorf("Warnings = %v, want exactly one", rep.Warnings)
+	}
+}
+
+// markPartial rewrites a committed manifest's state. There is no API for this
+// on purpose -- only a backup decides that a snapshot came out partial -- so
+// the test edits the file, which is also a check that the state round-trips
+// through JSON under the name the manifest actually uses.
+func markPartial(t *testing.T, r *repo.Repository, id string) {
+	t.Helper()
+	path := filepath.Join(r.Root(), "snapshots", id+".json")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("reading manifest: %v", err)
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatalf("decoding manifest: %v", err)
+	}
+	doc["state"] = string(repo.StatePartial)
+	patched, err := json.Marshal(doc)
+	if err != nil {
+		t.Fatalf("encoding manifest: %v", err)
+	}
+	if err := os.WriteFile(path, patched, 0o644); err != nil {
+		t.Fatalf("writing manifest: %v", err)
+	}
+	if m, err := r.LoadManifest(id); err != nil || m.State != repo.StatePartial {
+		t.Fatalf("manifest did not come back partial: state=%v err=%v", m.State, err)
+	}
+}
+
+// captureStderr redirects os.Stderr for the duration of the test and returns a
+// function yielding whatever was written to it.
+func captureStderr(t *testing.T) func() string {
+	t.Helper()
+	read, write, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe: %v", err)
+	}
+	saved := os.Stderr
+	os.Stderr = write
+
+	done := make(chan string, 1)
+	go func() {
+		var buf bytes.Buffer
+		_, _ = io.Copy(&buf, read)
+		done <- buf.String()
+	}()
+
+	var out string
+	var once sync.Once
+	collect := func() string {
+		once.Do(func() {
+			os.Stderr = saved
+			_ = write.Close()
+			out = <-done
+			_ = read.Close()
+		})
+		return out
+	}
+	t.Cleanup(func() { collect() })
+	return collect
 }

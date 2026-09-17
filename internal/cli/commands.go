@@ -335,6 +335,11 @@ func newRestoreCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			// Warnings stay on stderr, where a CLI's warnings belong, even
+			// though the library now returns them rather than printing them.
+			for _, w := range rep.Warnings {
+				fmt.Fprintf(os.Stderr, "restore: warning: %s\n", w)
+			}
 			verb := "Restored"
 			if rep.DryRun {
 				verb = "Would restore"

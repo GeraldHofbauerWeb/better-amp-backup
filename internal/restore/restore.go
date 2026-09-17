@@ -55,6 +55,13 @@ type Report struct {
 	Verified int
 	Skipped  int
 	DryRun   bool
+
+	// Warnings carries what the operator has to know but that did not stop the
+	// restore -- so far, only that the source snapshot was partial. A library
+	// reports such a thing; it does not write to stderr, because under the
+	// daemon stderr is the journal and nobody watching a restore in a browser
+	// will ever look there.
+	Warnings []string
 }
 
 // Run restores a snapshot.
@@ -74,13 +81,6 @@ func Run(ctx context.Context, r *repo.Repository, opts Options) (*Report, error)
 		return nil, fmt.Errorf("restore: snapshot %s is in state %q and must not be restored",
 			m.ID, m.State)
 	}
-	if m.State == repo.StatePartial {
-		// Not fatal, but the operator has to know the source was imperfect.
-		fmt.Fprintf(os.Stderr,
-			"restore: warning: snapshot %s is partial (%d warnings recorded when it was taken)\n",
-			m.ID, len(m.Warnings))
-	}
-
 	target, err := filepath.Abs(opts.Target)
 	if err != nil {
 		return nil, fmt.Errorf("restore: resolve target: %w", err)
@@ -95,6 +95,14 @@ func Run(ctx context.Context, r *repo.Repository, opts Options) (*Report, error)
 	}
 
 	rep := &Report{DryRun: opts.DryRun}
+	if m.State == repo.StatePartial {
+		// Not fatal, but the operator has to know the source was imperfect --
+		// and has to know it even for a dry run, which is where someone looks
+		// before committing to the real thing.
+		rep.Warnings = append(rep.Warnings, fmt.Sprintf(
+			"snapshot %s is partial (%d warnings recorded when it was taken)",
+			m.ID, len(m.Warnings)))
+	}
 	if opts.DryRun {
 		for _, e := range entries {
 			countEntry(rep, e)
