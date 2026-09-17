@@ -243,3 +243,29 @@ func TestMalformedCharacterClassIsRejected(t *testing.T) {
 		}
 	}
 }
+
+// A pattern holding a non-ASCII character used to compile into a regexp that
+// could never match the name it was written for. The compiler walked bytes and
+// turned each one into a string, which re-encodes any byte above 0x7F as a
+// different character -- so the rule was silently inert, and the file it named
+// went into every backup.
+func TestPatternsWithNonASCIICharacters(t *testing.T) {
+	cases := []struct{ pattern, path string }{
+		{"größe-täst.toml", "config/größe-täst.toml"},
+		{"config/größe-täst.toml", "config/größe-täst.toml"},
+		{"**/Mödpäck/**", "instances/Mödpäck/mods/a.jar"},
+		{"世界", "saves/世界/level.dat"},
+		{"täst?.cfg", "täst1.cfg"},
+		{"[äö]test.cfg", "ätest.cfg"},
+	}
+	for _, c := range cases {
+		set, err := Compile([]string{c.pattern})
+		if err != nil {
+			t.Errorf("Compile(%q): %v", c.pattern, err)
+			continue
+		}
+		if !set.Match(c.path) {
+			t.Errorf("pattern %q does not match %q", c.pattern, c.path)
+		}
+	}
+}

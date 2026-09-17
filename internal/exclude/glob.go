@@ -133,14 +133,20 @@ func compileGlob(glob string) (*regexp.Regexp, error) {
 		b.WriteString("(?:.*/)?")
 	}
 
-	for i := 0; i < len(glob); i++ {
-		switch c := glob[i]; c {
+	// Walked as runes, not bytes. Every metacharacter here is ASCII, but the
+	// default branch turns one element into a string, and doing that to a byte
+	// of a multi-byte character produces a different character -- so a pattern
+	// holding an umlaut used to compile into a regexp that could never match
+	// the name it was written for, silently.
+	runes := []rune(glob)
+	for i := 0; i < len(runes); i++ {
+		switch c := runes[i]; c {
 		case '*':
-			if i+1 < len(glob) && glob[i+1] == '*' {
+			if i+1 < len(runes) && runes[i+1] == '*' {
 				i++
 				// "**/" may match nothing at all, so that "**/cache" also
 				// matches a top-level "cache".
-				if i+1 < len(glob) && glob[i+1] == '/' {
+				if i+1 < len(runes) && runes[i+1] == '/' {
 					i++
 					b.WriteString("(?:.*/)?")
 				} else {
@@ -155,11 +161,17 @@ func compileGlob(glob string) (*regexp.Regexp, error) {
 			// Character class, e.g. core.[0-9]* to catch JVM core dumps
 			// without also catching core.conf. A leading ! negates, as in
 			// shell globs.
-			end := strings.IndexByte(glob[i:], ']')
+			end := -1
+			for j := i + 1; j < len(runes); j++ {
+				if runes[j] == ']' {
+					end = j
+					break
+				}
+			}
 			if end < 0 {
 				return nil, fmt.Errorf("unclosed '[' in pattern")
 			}
-			body := glob[i+1 : i+end]
+			body := string(runes[i+1 : end])
 			if body == "" {
 				return nil, fmt.Errorf("empty character class")
 			}
@@ -170,7 +182,7 @@ func compileGlob(glob string) (*regexp.Regexp, error) {
 				body = "^" + body[1:]
 			}
 			b.WriteString("[" + body + "]")
-			i += end
+			i = end
 		case '/':
 			b.WriteString("/")
 		default:
