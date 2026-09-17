@@ -1,0 +1,46 @@
+[Unit]
+Description=Backup interface and scheduler for AMP instance %i
+Documentation=https://github.com/GeraldHofbauerWeb/better-amp-backup
+After=ampinstmgr.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# The instances belong to this user already; the daemon needs no more access
+# than they have, and specifically not root. That is also why it keeps its own
+# schedule rather than rewriting a timer it could not reload.
+User=amp
+Group=amp
+EnvironmentFile=/etc/better-amp-backup/common.env
+EnvironmentFile=/etc/better-amp-backup/%i.env
+EnvironmentFile=-/etc/better-amp-backup/%i.web.env
+ExecStart=/opt/better-amp-backup/bin/amp-bb serve --instance %i --root ${AMPBB_ROOT}
+Restart=on-failure
+RestartSec=5
+
+# The socket nginx connects to, and the settings and run history.
+RuntimeDirectory=better-amp-backup
+RuntimeDirectoryMode=0750
+StateDirectory=better-amp-backup
+StateDirectoryMode=0750
+
+# A backup must not slow down the server it is backing up.
+Nice=10
+IOSchedulingClass=idle
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+# The repository it writes, and the instance a restore puts files back into.
+# ReadWritePaths takes precedence over ProtectHome -- checked with systemd-run
+# before this was written, because the failure mode is a restore dying with
+# EROFS in production.
+ReadWritePaths=/opt/better-amp-backup/repo
+ReadWritePaths=${AMPBB_ROOT}
+
+[Install]
+WantedBy=multi-user.target

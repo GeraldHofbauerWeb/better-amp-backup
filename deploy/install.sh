@@ -57,6 +57,11 @@ if [[ $WITH_WEB -eq 1 ]]; then
   [[ -n $INSTANCE_ID ]] || die "--with-web needs --amp-instance-id (the instance's AMP GUID)"
 fi
 
+UNITS=(amp-bb@.service amp-bb@.timer amp-bb-retention@.service amp-bb-retention@.timer amp-bb-web@.service)
+for unit in "${UNITS[@]}"; do
+  [[ -f "$(dirname "$0")/systemd/$unit" ]] || die "missing unit file: deploy/systemd/$unit"
+done
+
 install -d -m 0755 "$PREFIX/bin"
 install -d -m 0750 -o "$AMP_USER" -g "$AMP_USER" "$REPO"
 install -d -m 0750 "$CONF"
@@ -96,12 +101,9 @@ ENV
   chmod 0644 "$WEB_ENV"
 fi
 
-install -m 0644 "$(dirname "$0")"/systemd/amp-bb-web@.service /etc/systemd/system/
-install -m 0644 "$(dirname "$0")"/systemd/amp-bb@.service \
-                "$(dirname "$0")"/systemd/amp-bb@.timer \
-                "$(dirname "$0")"/systemd/amp-bb-retention@.service \
-                "$(dirname "$0")"/systemd/amp-bb-retention@.timer \
-                /etc/systemd/system/
+for unit in "${UNITS[@]}"; do
+  install -m 0644 "$(dirname "$0")/systemd/$unit" /etc/systemd/system/
+done
 systemctl daemon-reload
 
 cat <<NEXT
