@@ -91,6 +91,17 @@ func (s *Scheduler) Next() (backup, housekeeping time.Time) {
 	return s.next.backup, s.next.housekeeping
 }
 
+// Refresh recomputes the next times now, rather than when the run loop next
+// wakes up.
+//
+// Saving the settings goes through the store, which notifies this scheduler on
+// a channel -- and the reply to that save is written before the goroutine on
+// the other end of it has necessarily run. Whoever just changed the interval
+// would therefore be told the old next run, and would keep being told it until
+// the next poll. It is the same computation the loop does, under the same
+// lock, and doing it twice changes nothing.
+func (s *Scheduler) Refresh() { s.recompute() }
+
 // Run blocks until ctx is done.
 func (s *Scheduler) Run(ctx context.Context) error {
 	updates, unsubscribe := s.settings.Subscribe()

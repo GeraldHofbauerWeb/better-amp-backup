@@ -41,6 +41,9 @@ const (
 // Scheduler is the part of the schedule the status page needs.
 type Scheduler interface {
 	Next() (backup, housekeeping time.Time)
+	// Refresh recomputes those times, so that the answer to a settings change
+	// describes the schedule that change produced rather than the one before.
+	Refresh()
 }
 
 // Deps is everything the handler needs.

@@ -147,17 +147,7 @@ func (s *server) handleStatus(w http.ResponseWriter, r *http.Request, sess *auth
 		out.CurrentJob = &job
 	}
 	out.LastSnapshot = s.newestSnapshot(cfg.Instance.Name)
-	if s.Scheduler != nil {
-		backup, house := s.Scheduler.Next()
-		if !backup.IsZero() {
-			t := backup.UTC()
-			out.NextBackup = &t
-		}
-		if !house.IsZero() {
-			t := house.UTC()
-			out.NextHousekeeping = &t
-		}
-	}
+	out.NextBackup, out.NextHousekeeping = nextRuns(s.Scheduler)
 
 	out.Instance.State = s.instanceState(r.Context(), &out)
 	out.AMPBackups = s.ampBackupSchedule(r.Context(), sess)
@@ -377,9 +367,36 @@ func (s *server) handlePutSettings(w http.ResponseWriter, r *http.Request, sess 
 		writeError(w, http.StatusBadRequest, err.Error(), "")
 		return
 	}
+	// The store notifies the scheduler on a channel, and this reply would
+	// otherwise be written before the goroutine at the other end had run --
+	// so somebody who had just changed the interval would be told the next run
+	// worked out from the old one. Recomputing here makes the answer describe
+	// the schedule the change produced.
+	if s.Scheduler != nil {
+		s.Scheduler.Refresh()
+	}
+
 	// Answer with what was stored rather than with what was sent, so the tab
 	// re-renders from the truth.
 	writeJSON(w, http.StatusOK, map[string]any{"settings": saved})
+}
+
+// nextRuns is the scheduler's answer in the shape the API uses: UTC, and
+// absent rather than zero when nothing is scheduled.
+func nextRuns(sch Scheduler) (backup, housekeeping *time.Time) {
+	if sch == nil {
+		return nil, nil
+	}
+	b, h := sch.Next()
+	if !b.IsZero() {
+		t := b.UTC()
+		backup = &t
+	}
+	if !h.IsZero() {
+		t := h.UTC()
+		housekeeping = &t
+	}
+	return backup, housekeeping
 }
 
 type exclusionPreviewRequest struct {

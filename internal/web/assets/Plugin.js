@@ -1031,6 +1031,12 @@ function wire() {
             renderSettings();
             text(statusNode, 'Saved. ' + (settings.updated_by ? 'By ' + settings.updated_by + '.' : ''));
             loadRetentionPreview();
+            /* A new interval means a new next run, and the overview is where
+             * anybody looks to see whether the change took. Waiting out the
+             * minute-long poll for that reads as the save not having worked.
+             * The server recomputes before it answers, so this sees the
+             * schedule the change produced and not the one before it. */
+            await refresh();
         } catch (e) {
             text(statusNode, e.message);
         }

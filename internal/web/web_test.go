@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -36,6 +37,12 @@ type rig struct {
 }
 
 func newRig(t *testing.T, spec map[string]map[string]any) *rig {
+	return newRigWith(t, spec, nil)
+}
+
+// newRigWith is newRig plus a scheduler, for the tests that care when the next
+// run is worked out rather than only what it is.
+func newRigWith(t *testing.T, spec map[string]map[string]any, sched Scheduler) *rig {
 	t.Helper()
 
 	root := t.TempDir()
@@ -97,6 +104,7 @@ func newRig(t *testing.T, spec map[string]map[string]any) *rig {
 		Validator:     auth.AMPValidator{Dial: userClient},
 		UserClient:    userClient,
 		ServiceClient: func(context.Context) (*amp.Client, error) { return service, nil },
+		Scheduler:     sched,
 		Version:       "test",
 	})
 	if err != nil {
@@ -736,5 +744,69 @@ func TestStatusPicksTheNewestSnapshot(t *testing.T) {
 	rig.do(t, "GET", "/amp-bb/api/status", nil, http.StatusOK, &st)
 	if st.LastSnapshot == nil || st.LastSnapshot.ID != second.ID {
 		t.Errorf("reported %v, want %s", st.LastSnapshot, second.ID)
+	}
+}
+
+// recordingScheduler is a Scheduler whose next times only move when it is told
+// to recompute -- which is exactly the property under test.
+type recordingScheduler struct {
+	mu        sync.Mutex
+	store     *settings.Store
+	now       time.Time
+	next      time.Time
+	refreshes int
+}
+
+func (s *recordingScheduler) Next() (time.Time, time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.next, time.Time{}
+}
+
+func (s *recordingScheduler) Refresh() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.refreshes++
+	every, err := s.store.Get().Schedule.Interval()
+	if err != nil {
+		return
+	}
+	s.next = s.now.Add(every)
+}
+
+// Saving a new interval has to change what the overview is told straight away.
+//
+// The settings store notifies the scheduler on a channel, so the reply to the
+// save is written before the goroutine at the other end has necessarily run:
+// whoever just changed the interval would be shown the next run worked out
+// from the old one, and would keep being shown it until the next poll a minute
+// later -- which reads as the save not having worked.
+func TestSavingTheIntervalMovesTheNextRunAtOnce(t *testing.T) {
+	sched := &recordingScheduler{now: time.Date(2026, 9, 18, 2, 0, 0, 0, time.UTC)}
+	rig := newRigWith(t, nil, sched)
+	sched.store = rig.settings
+	sched.Refresh()
+	now := sched.now
+
+	rig.signIn(t)
+
+	var before Status
+	rig.do(t, "GET", "/amp-bb/api/status", nil, http.StatusOK, &before)
+	if before.NextBackup == nil || !before.NextBackup.Equal(now.Add(time.Hour)) {
+		t.Fatalf("next backup = %v, want the default hour", before.NextBackup)
+	}
+
+	cfg := rig.settings.Get()
+	cfg.Schedule.Every = "15m"
+	rig.do(t, "PUT", "/amp-bb/api/settings", cfg, http.StatusOK, nil)
+
+	var now2 Status
+	rig.do(t, "GET", "/amp-bb/api/status", nil, http.StatusOK, &now2)
+	after := now2.NextBackup
+	if after == nil || !after.Equal(now.Add(15*time.Minute)) {
+		t.Errorf("next backup = %v after saving a 15m interval, want %v", after, now.Add(15*time.Minute))
+	}
+	if sched.refreshes < 2 {
+		t.Errorf("the scheduler was asked to recompute %d time(s); saving must ask it", sched.refreshes)
 	}
 }
