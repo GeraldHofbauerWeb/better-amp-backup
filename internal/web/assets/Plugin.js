@@ -218,6 +218,10 @@ function renderBanners() {
         host.appendChild(banner('warn', 'A scheduled backup was skipped',
             status.last_skip.reason + ' — ' + ago(status.last_skip.at, status.server_now) + '.'));
     }
+
+    /* A banner appearing or going takes its height from whatever is below it,
+     * and what is below it is the browser. */
+    sizeTheBrowser();
 }
 
 /* --- overview ------------------------------------------------------------- */
@@ -910,6 +914,22 @@ function switchView(name) {
         node.setAttribute('aria-selected', node.dataset.view === name ? 'true' : 'false');
     });
     if (name === 'settings') { loadRetentionPreview(); previewExclusions(); }
+    if (name === 'snapshots') { sizeTheBrowser(); }
+}
+
+/* The snapshot browser takes whatever is left of the window below it.
+ *
+ * How much that is cannot be written into the stylesheet: above it sit AMP's
+ * own header, our banners -- which come and go -- and the tab strip, and none
+ * of those has a height we may assume. So it is measured. The stylesheet keeps
+ * a floor for the moments before the first measurement, and for the case where
+ * this never runs at all. */
+function sizeTheBrowser() {
+    const split = document.querySelector(AMPBB_TAB + ' .ampbb-split');
+    if (!split || split.offsetParent === null) { return; }
+    const top = split.getBoundingClientRect().top;
+    const room = window.innerHeight - top - 24;
+    split.style.setProperty('--ampbb-split-height', Math.max(0, Math.round(room)) + 'px');
 }
 
 /* --- wiring --------------------------------------------------------------- */
@@ -979,6 +999,8 @@ function wire() {
     el('ampbb-job-cancel').addEventListener('click', () => {
         if (currentJob) { api('POST', '/jobs/' + encodeURIComponent(currentJob.id) + '/cancel', {}); }
     });
+
+    window.addEventListener('resize', sizeTheBrowser);
 
     el('ampbb-restore').addEventListener('click', restoreDialog);
     el('ampbb-clear-selection').addEventListener('click', () => {

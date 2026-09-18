@@ -407,3 +407,55 @@ func TestTheFilePickerBoxesAreDrawnLikeThePanel(t *testing.T) {
 		t.Error("a ticked box has no tick in it")
 	}
 }
+
+// The snapshot browser takes whatever is left of the window, which cannot be
+// written into the stylesheet: AMP's header, our banners and the tab strip all
+// sit above it and none has a height worth assuming. The script measures it;
+// the stylesheet keeps the floor for before the first measurement, and for the
+// case where it never runs.
+func TestTheBrowserFillsTheWindowWithAFloorUnderIt(t *testing.T) {
+	css := asset(t, "amp-bb.css")
+	script := asset(t, "Plugin.js")
+
+	block := css[strings.Index(css, ".ampbb-split {"):]
+	block = block[:strings.Index(block, "}")]
+	if !strings.Contains(block, "height: var(--ampbb-split-height, 34rem)") {
+		t.Error("the split does not take its height from the measurement")
+	}
+	if !strings.Contains(block, "min-height") {
+		t.Error("the split has no floor, so a short window would collapse it")
+	}
+	if strings.Contains(block, "align-items: start") {
+		t.Error("align-items:start is back, so the two columns are different heights again")
+	}
+
+	// A flex item will not shrink below its content without this, so the
+	// scrollbar never appears and the box grows past the window instead.
+	for _, selector := range []string{"#ampbb-snapshot-list {", ".ampbb-tree {"} {
+		rule := css[strings.Index(css, selector):]
+		rule = rule[:strings.Index(rule, "}")]
+		if !strings.Contains(rule, "min-height: 0") {
+			t.Errorf("%s does not allow itself to shrink, so it cannot scroll", selector)
+		}
+	}
+
+	if !strings.Contains(script, "--ampbb-split-height") {
+		t.Error("nothing ever measures the room the browser has")
+	}
+	for _, when := range []string{"window.addEventListener('resize', sizeTheBrowser)", "sizeTheBrowser();"} {
+		if !strings.Contains(script, when) {
+			t.Errorf("the measurement is not taken at %q", when)
+		}
+	}
+}
+
+// An element the script has hidden has to be hidden. This tab lives inside a
+// stylesheet nobody here wrote, and a rule of ours three classes deep already
+// beat the plain version once -- which left the custom-interval box on screen
+// beside a preset that was not "custom".
+func TestHiddenOutranksEverything(t *testing.T) {
+	css := asset(t, "amp-bb.css")
+	if !strings.Contains(css, ".ampbb [hidden] { display: none !important; }") {
+		t.Error("hidden is not the last word, so any deeper rule can undo it")
+	}
+}

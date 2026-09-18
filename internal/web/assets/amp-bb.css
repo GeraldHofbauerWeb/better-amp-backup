@@ -92,15 +92,42 @@
   white-space: pre-wrap; word-break: break-word; opacity: .8;
 }
 
-.ampbb-split { display: grid; grid-template-columns: minmax(260px, 340px) 1fr; gap: 1rem; align-items: start; }
-@media (max-width: 900px) { .ampbb-split { grid-template-columns: 1fr; } }
+/* Both columns are the same height -- align-items defaults to stretch, and
+   saying "start" here was what left the snapshot list a stub beside a browser
+   twice its height -- and that height is whatever is left of the window.
+   
+   How much that is depends on AMP's own header, our banners and the tab strip,
+   none of which have a fixed height, so the script measures it and sets the
+   variable. Without it, or before the first measurement, the floor applies:
+   the size this had when it was a pair of fixed boxes. */
+.ampbb-split {
+  display: grid;
+  grid-template-columns: minmax(260px, 340px) 1fr;
+  gap: 1rem;
+  height: var(--ampbb-split-height, 34rem);
+  min-height: 34rem;
+}
+@media (max-width: 900px) {
+  .ampbb-split { grid-template-columns: 1fr; height: auto; }
+}
 
-.ampbb-list, .ampbb-browser { border-radius: 4px; background: rgba(127, 127, 127, .08); overflow: hidden; }
+.ampbb-list, .ampbb-browser {
+  border-radius: 4px;
+  background: rgba(127, 127, 127, .08);
+  overflow: hidden;
+  /* A column, so that the head stays put and the list under it takes the rest.
+     min-height:0 is the part that is easy to leave out and impossible to spot
+     afterwards: without it a flex item refuses to shrink below its content,
+     the scrollbar never appears, and the box grows past the window instead. */
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
 .ampbb-list-head, .ampbb-browser-head {
   display: flex; justify-content: space-between; align-items: center; gap: .75rem;
   padding: .6rem .9rem; background: rgba(127, 127, 127, .12);
 }
-#ampbb-snapshot-list { max-height: 28rem; overflow: auto; }
+#ampbb-snapshot-list { flex: 1 1 auto; min-height: 0; overflow: auto; }
 
 .ampbb-snapshot { display: block; width: 100%; text-align: left; background: transparent; border: 0; color: inherit; font: inherit; cursor: pointer; padding: .55rem .9rem; border-bottom: 1px solid rgba(127,127,127,.15); }
 .ampbb-snapshot:hover { background: rgba(127, 127, 127, .12); }
@@ -121,7 +148,7 @@
 .ampbb-crumb:hover { opacity: 1; }
 .ampbb-crumb-sep { opacity: .4; }
 
-.ampbb-tree { max-height: 26rem; overflow: auto; }
+.ampbb-tree { flex: 1 1 auto; min-height: 0; overflow: auto; }
 .ampbb-row { display: flex; align-items: center; gap: .5rem; padding: .3rem .9rem; }
 .ampbb-row:hover { background: rgba(127, 127, 127, .1); }
 /* Both of these are flex items next to a name that grows, and a flex item
@@ -307,9 +334,15 @@ select.ampbb-addon { width: 7.5rem; cursor: pointer; opacity: 1; }
 
 /* The hidden attribute is display:none from the browser's own stylesheet,
    which any class here outranks. A view that sets its own display therefore
-   has to say this as well, or every tab shows every panel at once. */
+   has to say this as well, or every tab shows every panel at once.
+   
+   And it says it with !important, which is not laziness. This tab lives inside
+   a stylesheet nobody here wrote, and the rule above -- three classes deep --
+   already beat the plain version once, leaving the custom-interval box on
+   screen next to a preset that was not "custom". An element the script has
+   hidden has to be hidden, whatever anyone else has to say about its display. */
 .ampbb .ampbb-view[hidden],
-.ampbb [hidden] { display: none; }
+.ampbb [hidden] { display: none !important; }
 
 /* Retention is a tall list of short rows; the other two are short. Side by
    side, nothing has to stretch the full width of a panel. */
