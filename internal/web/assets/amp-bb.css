@@ -26,7 +26,14 @@
   line-height: 1.5;
   text-transform: none;
   letter-spacing: normal;
+  /* And it makes them inline-flex boxes that centre their own contents, which
+     is why text-align had no effect on a file name: the name was not text
+     being aligned, it was a flex item being centred. */
+  display: inline-block;
+  justify-content: flex-start;
+  text-align: left;
 }
+.ampbb .ampbb-more { text-align: center; }
 .ampbb .ampbb-name:hover,
 .ampbb .ampbb-crumb:hover,
 .ampbb .ampbb-more:hover { background: none; }
@@ -195,6 +202,43 @@
   cursor: inherit;
 }
 .ampbb input[type="checkbox"] + .mat-icon::after { content: none; }
+
+/* Picking files is not switching a setting on, so those boxes stay boxes --
+   but AMP has no styled tick box to borrow (its only checkbox is the switch
+   above), and the browser's default looks like it wandered in from another
+   page. This is the same square, in the panel's accent. */
+.ampbb-row > input[type="checkbox"],
+.ampbb-dialog input[type="checkbox"] {
+  appearance: none; -webkit-appearance: none;
+  box-sizing: border-box;
+  position: relative;
+  width: 1rem; height: 1rem;
+  margin: 0;
+  border: 1px solid rgba(255, 255, 255, .45);
+  border-radius: 3px;
+  background: rgba(0, 0, 0, .25);
+  cursor: pointer;
+  transition: background-color .12s ease, border-color .12s ease;
+}
+.ampbb-row > input[type="checkbox"]:hover,
+.ampbb-dialog input[type="checkbox"]:hover { border-color: #5ea8de; }
+.ampbb-row > input[type="checkbox"]:checked,
+.ampbb-dialog input[type="checkbox"]:checked { background: #5ea8de; border-color: #5ea8de; }
+/* The tick itself: two borders of an empty box, turned onto their corner. */
+.ampbb-row > input[type="checkbox"]:checked::after,
+.ampbb-dialog input[type="checkbox"]:checked::after {
+  content: "";
+  position: absolute;
+  left: .3rem; top: .08rem;
+  width: .25rem; height: .5rem;
+  border: solid #10202e;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+.ampbb-row > input[type="checkbox"]:disabled,
+.ampbb-dialog input[type="checkbox"]:disabled { opacity: .4; cursor: default; }
+.ampbb-row > input[type="checkbox"]:focus-visible,
+.ampbb-dialog input[type="checkbox"]:focus-visible { outline: 2px solid #5ea8de; outline-offset: 2px; }
 
 /* A rule that is switched off keeps its number visible -- it is what comes
    back when the switch goes on again -- but must not read as being in force. */

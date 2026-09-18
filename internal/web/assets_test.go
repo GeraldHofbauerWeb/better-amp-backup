@@ -95,7 +95,14 @@ func TestTheStylesheetResetsAMPsButtonStyling(t *testing.T) {
 	css := asset(t, "amp-bb.css")
 	block := css[strings.Index(css, ".ampbb .ampbb-name"):]
 	block = block[:strings.Index(block, "}")]
-	for _, property := range []string{"padding", "min-width", "border", "background"} {
+	// display and justify-content belong in that list: AMP draws a button as an
+	// inline-flex box that centres its own contents, so a file name was not
+	// text being aligned but a flex item being centred, and text-align alone
+	// could do nothing about it.
+	for _, property := range []string{
+		"padding", "min-width", "border", "background",
+		"display", "justify-content", "text-align",
+	} {
 		if !strings.Contains(block, property) {
 			t.Errorf("the button reset does not neutralise %q", property)
 		}
@@ -381,5 +388,22 @@ func TestAnAwkwardInstanceIDCannotEscapeTheLiteral(t *testing.T) {
 	}
 	if !strings.Contains(inside, "alert(1)") {
 		t.Errorf("the id did not survive the escaping at all: %s", line)
+	}
+}
+
+// Picking files is not switching a setting on, so those stay tick boxes -- but
+// AMP has no styled tick box to borrow, its only checkbox being the switch, and
+// the browser's default looks like it wandered in from another page.
+func TestTheFilePickerBoxesAreDrawnLikeThePanel(t *testing.T) {
+	css := asset(t, "amp-bb.css")
+	block := css[strings.Index(css, `.ampbb-row > input[type="checkbox"],`):]
+	block = block[:strings.Index(block, "}")]
+	for _, property := range []string{"appearance: none", "border-radius: 3px", "width: 1rem"} {
+		if !strings.Contains(block, property) {
+			t.Errorf("the file picker box is missing %q", property)
+		}
+	}
+	if !strings.Contains(css, `.ampbb-row > input[type="checkbox"]:checked::after,`) {
+		t.Error("a ticked box has no tick in it")
 	}
 }
