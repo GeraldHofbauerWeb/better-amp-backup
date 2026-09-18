@@ -574,3 +574,74 @@ func TestIncludeAndIncludePathAreExclusive(t *testing.T) {
 		t.Errorf("expected a refusal to combine the two filters, got: %v", err)
 	}
 }
+
+// A file somebody else owns can still be overwritten -- the restore writes a
+// temporary file and renames it, which needs permission on the directory and
+// not on the file -- but its modification time cannot be set, because utimes is
+// the owner's privilege. That must not throw away a restore that has already
+// written every byte and verified all of it against the index.
+//
+// This is not hypothetical. AMP's own restore of the production instance died
+// one second in on a handful of root-owned leftovers and left its progress bar
+// turning for the rest of the day. Ours reaches further, because it renames
+// rather than opens -- but it used to fall over here, at the very last step,
+// after doing all the work correctly.
+func TestATimestampWeMayNotSetIsAWarningAndNotAFailure(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root may set any timestamp, so there is nothing to refuse")
+	}
+
+	target := t.TempDir()
+	locked := filepath.Join(target, "locked")
+	if err := os.Mkdir(locked, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, rel := range []string{"server.properties", "locked/config.toml"} {
+		if err := os.WriteFile(filepath.Join(target, filepath.FromSlash(rel)),
+			[]byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Taking the search bit off the directory is how a test refuses utimes to
+	// its own process without needing a second account.
+	if err := os.Chmod(locked, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(locked, 0o755) })
+
+	when := time.Date(2026, 9, 17, 18, 13, 54, 0, time.UTC).UnixNano()
+	warnings, err := applyTimes(target, []repo.Entry{
+		{Path: "server.properties", Type: repo.TypeFile, ModTime: when},
+		{Path: "locked/config.toml", Type: repo.TypeFile, ModTime: when},
+	})
+	if err != nil {
+		t.Fatalf("applyTimes refused the whole restore over one timestamp: %v", err)
+	}
+	if len(warnings) != 1 {
+		t.Fatalf("warnings = %v, want exactly one", warnings)
+	}
+	if !strings.Contains(warnings[0], "locked/config.toml") {
+		t.Errorf("the warning does not name the file it could not touch: %q", warnings[0])
+	}
+
+	// The one it was allowed to touch still has to have been touched.
+	st, err := os.Stat(filepath.Join(target, "server.properties"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.ModTime().UnixNano() != when {
+		t.Errorf("server.properties kept %s; the refusal stopped the walk", st.ModTime())
+	}
+}
+
+// Anything other than a refusal still fails the restore: a timestamp that
+// cannot be set for a reason we do not understand is not something to shrug at.
+func TestAnUnexplainedTimestampFailureStillFails(t *testing.T) {
+	target := t.TempDir()
+	// A path that escapes the target is rejected before chtimes is reached.
+	if _, err := applyTimes(target, []repo.Entry{
+		{Path: "../outside", Type: repo.TypeFile, ModTime: 1},
+	}); err == nil {
+		t.Error("a path outside the target was accepted")
+	}
+}

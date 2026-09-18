@@ -184,9 +184,11 @@ func Run(ctx context.Context, r *repo.Repository, opts Options) (*Report, error)
 	opts.Progress(len(entries), len(entries))
 
 	if opts.RestoreTimes {
-		if err := applyTimes(target, entries); err != nil {
+		warnings, err := applyTimes(target, entries)
+		if err != nil {
 			return nil, err
 		}
+		rep.Warnings = append(rep.Warnings, warnings...)
 	}
 	return rep, nil
 }
@@ -353,27 +355,54 @@ func writeFile(ctx context.Context, r *repo.Repository, target string, e repo.En
 
 // applyTimes walks the entries deepest-first, so that writing a child does not
 // reset the timestamp of a parent that was already fixed up.
-func applyTimes(target string, entries []repo.Entry) error {
+//
+// A timestamp we are not allowed to set is reported and not raised. The kernel
+// only lets the owner of a file call utimes on it, so a single file left behind
+// by root -- a leftover from a container, an unpacked archive, a hand-edited
+// config -- would otherwise throw away a restore that had already written every
+// byte correctly and verified all of it against the index. The content is what
+// was asked for and it is provably right; the modification time is not worth
+// that.
+func applyTimes(target string, entries []repo.Entry) ([]string, error) {
 	ordered := append([]repo.Entry(nil), entries...)
 	sort.Slice(ordered, func(i, j int) bool { return ordered[i].Path > ordered[j].Path })
 
+	var refused []string
 	for _, e := range ordered {
 		if e.ModTime == 0 || e.Type == repo.TypeSymlink {
 			continue
 		}
 		dst, err := safeJoin(target, e.Path)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		mt := time.Unix(0, e.ModTime)
 		if err := os.Chtimes(dst, mt, mt); err != nil {
 			if errors.Is(err, os.ErrNotExist) {
 				continue
 			}
-			return fmt.Errorf("restore: set times on %s: %w", e.Path, err)
+			if errors.Is(err, os.ErrPermission) {
+				refused = append(refused, e.Path)
+				continue
+			}
+			return nil, fmt.Errorf("restore: set times on %s: %w", e.Path, err)
 		}
 	}
-	return nil
+	if len(refused) == 0 {
+		return nil, nil
+	}
+	// Naming a few is what makes this actionable: the paths say whose files
+	// they are, and the fix is a chown rather than anything to do with backups.
+	shown := refused
+	if len(shown) > 3 {
+		shown = shown[:3]
+	}
+	msg := fmt.Sprintf("kept the contents but could not set the modification time on %d "+
+		"file(s) or directory (%s) -- they belong to another user", len(refused), strings.Join(shown, ", "))
+	if len(refused) > len(shown) {
+		msg += fmt.Sprintf(" and %d more", len(refused)-len(shown))
+	}
+	return []string{msg}, nil
 }
 
 // Verify walks a restored tree and compares it against the snapshot, reporting
