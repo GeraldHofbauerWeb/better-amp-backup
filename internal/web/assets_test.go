@@ -459,3 +459,24 @@ func TestHiddenOutranksEverything(t *testing.T) {
 		t.Error("hidden is not the last word, so any deeper rule can undo it")
 	}
 }
+
+// A box that scrolls in one axis may not be `visible` in the other: the used
+// value becomes `auto`. AMP's tab strip is overflow-x:auto so it can scroll
+// sideways on a phone, which silently gave it a vertical scrollbar too, for
+// the couple of pixels by which its contents miss.
+func TestTheTabStripDoesNotScrollUpwards(t *testing.T) {
+	css := asset(t, "amp-bb.css")
+	block := css[strings.Index(css, ".ampbb .tabHeaderContainer {"):]
+	block = block[:strings.Index(block, "}")]
+	if !strings.Contains(block, "overflow-y: hidden") {
+		t.Error("the tab strip may still grow a vertical scrollbar it has no use for")
+	}
+	// Sideways it still has to, or a narrow window loses the last tab, so
+	// AMP's own overflow-x must be left alone. (The comment in that block
+	// mentions it, which is why this looks for a declaration and not a word.)
+	for _, override := range []string{"overflow-x: hidden", "overflow-x: visible", "overflow-x: clip"} {
+		if strings.Contains(block, override) {
+			t.Errorf("%q stops the strip scrolling sideways; a narrow window cannot then reach every tab", override)
+		}
+	}
+}

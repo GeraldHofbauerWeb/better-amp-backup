@@ -70,7 +70,17 @@
    stylesheet does the rest -- including the oversized watermark icon. Only the
    negative margins need adjusting, because they are cut for the settings tab's
    padding and not for ours. */
-.ampbb .tabHeaderContainer { margin: 0 -1rem 1.25rem; padding: 0 1rem; top: 0; }
+.ampbb .tabHeaderContainer {
+  margin: 0 -1rem 1.25rem;
+  padding: 0 1rem;
+  top: 0;
+  /* AMP's strip is overflow-x:auto so that it can scroll sideways on a phone.
+     A box that scrolls in one axis may not be `visible` in the other, though --
+     the used value becomes `auto` -- so it had a vertical scrollbar as well,
+     for the two pixels by which its contents miss. Sideways it may still
+     scroll; upwards there is nothing to reach. */
+  overflow-y: hidden;
+}
 .ampbb .tabHeaderContainer .tabHeader { user-select: none; }
 
 .ampbb-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: .75rem; }
