@@ -169,39 +169,32 @@
 
 /* Each retention rule can be switched off on its own, so it gets a switch
    rather than a tick box: a switch says "this rule is running" at a glance,
-   down the left edge of the list, without reading a single number. */
-.ampbb .ampbb-rule-toggle,
-.ampbb .ampbb-toggle > input[type="checkbox"] {
-  appearance: none; -webkit-appearance: none;
-  position: relative;
-  flex: 0 0 auto;
-  box-sizing: border-box;
-  width: 2.2rem; height: 1.2rem;
-  margin: 0; padding: 0; border: 0;
-  border-radius: 999px;
-  background: rgba(127, 127, 127, .4);
-  cursor: pointer;
-  transition: background-color .15s ease;
-  vertical-align: middle;
+   down the left edge of the list, without reading a single number.
+
+   The switch is AMP's own -- <label class="checkbox"><input><span></span> --
+   rather than one of ours. The panel already draws that shape, in the panel's
+   green, and a second switch in a second colour beside it would be the one
+   thing in this tab that announced it was bolted on. */
+.ampbb label.checkbox { flex: 0 0 auto; line-height: 0; }
+.ampbb label.checkbox input[type="checkbox"]:disabled + span,
+.ampbb label.checkbox input[type="checkbox"]:disabled + span::after { cursor: default; opacity: .5; }
+
+/* AMP styles *any* span that directly follows a checkbox as that switch's
+   track: 38x14, grey, inset shadow, with a silver knob in ::after. The rule is
+   not scoped to its own label, and a file row puts the type icon immediately
+   after the tick box -- so every folder in the snapshot browser was drawn as a
+   broken switch, with the real tick box still sitting beside it. Give the icon
+   its own shape back, and only the icon: the switches above need that rule. */
+.ampbb input[type="checkbox"] + .mat-icon {
+  display: inline-block;
+  width: 1.25rem; height: auto;
+  background: none;
+  box-shadow: none;
+  border-radius: 0;
+  transition: none;
+  cursor: inherit;
 }
-.ampbb .ampbb-rule-toggle::after,
-.ampbb .ampbb-toggle > input[type="checkbox"]::after {
-  content: "";
-  position: absolute; top: .15rem; left: .15rem;
-  width: .9rem; height: .9rem;
-  border-radius: 50%;
-  background: #fff;
-  transition: transform .15s ease;
-}
-/* AMP's own accent, so the tab does not introduce a second blue. */
-.ampbb .ampbb-rule-toggle:checked,
-.ampbb .ampbb-toggle > input[type="checkbox"]:checked { background: #5ea8de; }
-.ampbb .ampbb-rule-toggle:checked::after,
-.ampbb .ampbb-toggle > input[type="checkbox"]:checked::after { transform: translateX(1rem); }
-.ampbb .ampbb-rule-toggle:disabled,
-.ampbb .ampbb-toggle > input[type="checkbox"]:disabled { opacity: .45; cursor: default; }
-.ampbb .ampbb-rule-toggle:focus-visible,
-.ampbb .ampbb-toggle > input[type="checkbox"]:focus-visible { outline: 2px solid #5ea8de; outline-offset: 2px; }
+.ampbb input[type="checkbox"] + .mat-icon::after { content: none; }
 
 /* A rule that is switched off keeps its number visible -- it is what comes
    back when the switch goes on again -- but must not read as being in force. */
@@ -255,7 +248,7 @@ select.ampbb-addon { width: 7.5rem; cursor: pointer; opacity: 1; }
 .ampbb-sentence-note { flex-basis: 100%; font-size: .82rem; opacity: .6; }
 
 .ampbb-toggle { display: flex; align-items: flex-start; gap: .9rem; padding: .5rem 0; }
-.ampbb-toggle > input[type="checkbox"] { margin-top: .15rem; }
+.ampbb-toggle > label.checkbox { margin-top: .3rem; }
 /* The nightly pass follows the rules it applies, and the retention preview
    sits between the two. Without a rule and some air it read as the last line
    of the preview rather than as a setting of its own. */

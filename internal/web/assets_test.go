@@ -2,6 +2,8 @@ package web
 
 import (
 	"io/fs"
+	"net/http"
+	"net/http/httptest"
 	"regexp"
 	"sort"
 	"strings"
@@ -188,7 +190,8 @@ func TestEveryRetentionRuleHasASwitchTheScriptKnowsAbout(t *testing.T) {
 
 	for _, row := range rows {
 		row = row[:strings.Index(row, "</div>")]
-		m := regexp.MustCompile(`id="([^"]+)" class="ampbb-rule-toggle"`).FindStringSubmatch(row)
+		m := regexp.MustCompile(`class="checkbox ampbb-rule-toggle"[^>]*><input type="checkbox" id="([^"]+)"`).
+			FindStringSubmatch(row)
 		if m == nil {
 			t.Errorf("a retention row has no switch:\n%s", strings.TrimSpace(row))
 			continue
@@ -240,22 +243,53 @@ func TestASettingsRowKeepsItsNoteOutFromUnderTheInput(t *testing.T) {
 	}
 }
 
-// The rules are switches rather than tick boxes, which only works if the
-// browser's own checkbox rendering is turned off first.
-func TestTheRuleSwitchesReplaceTheNativeCheckbox(t *testing.T) {
-	css := asset(t, "amp-bb.css")
-	block := css[strings.Index(css, ".ampbb .ampbb-rule-toggle,"):]
-	block = block[:strings.Index(block, "}")]
-	for _, property := range []string{"appearance: none", "border-radius: 999px", "position: relative"} {
-		if !strings.Contains(block, property) {
-			t.Errorf("the switch is missing %q, without which it renders as a tick box", property)
+// The rules are switches rather than tick boxes, and the switch is AMP's own:
+// <label class="checkbox"><input type="checkbox"><span></span></label>. The
+// empty span is not decoration -- it *is* the track AMP's stylesheet draws.
+// Dropping it leaves a checkbox that AMP hides, and nothing visible at all.
+func TestTheRuleSwitchesUseAMPsOwnSwitch(t *testing.T) {
+	markup := asset(t, "tab.html")
+
+	switches := regexp.MustCompile(
+		`<label class="checkbox[^"]*"[^>]*><input type="checkbox" id="([^"]+)"><span></span></label>`,
+	).FindAllStringSubmatch(markup, -1)
+	if len(switches) < 13 {
+		t.Errorf("found %d switches; every retention rule and every toggle block should have one", len(switches))
+	}
+
+	// And no settings checkbox may be left bare, or it renders as a tick box
+	// beside the switches.
+	for _, m := range regexp.MustCompile(`(.{90})<input type="checkbox" id="ampbb-[^"]+">`).
+		FindAllStringSubmatch(markup, -1) {
+		if !strings.Contains(m[1], `<label class="checkbox`) {
+			t.Errorf("a checkbox is not wrapped in AMP's switch:\n%s", strings.TrimSpace(m[0]))
 		}
 	}
-	if !strings.Contains(css, ".ampbb .ampbb-rule-toggle::after,") {
-		t.Error("the switch has no knob")
+}
+
+// AMP styles *any* span directly following a checkbox as a switch track, and
+// the rule is not scoped to its own label. A file row puts the type icon right
+// after the tick box, so every folder in the browser was drawn as a broken
+// switch with the real tick box beside it.
+func TestAMPsSwitchStylingDoesNotSwallowTheFileIcon(t *testing.T) {
+	css := asset(t, "amp-bb.css")
+	if !strings.Contains(css, `.ampbb input[type="checkbox"] + .mat-icon {`) {
+		t.Fatal("nothing undoes AMP's switch styling on the icon that follows a tick box")
 	}
-	if !strings.Contains(css, ":checked::after,") {
-		t.Error("nothing moves the knob when the rule is switched on")
+	block := css[strings.Index(css, `.ampbb input[type="checkbox"] + .mat-icon {`):]
+	block = block[:strings.Index(block, "}")]
+	for _, property := range []string{"background", "box-shadow", "border-radius", "width"} {
+		if !strings.Contains(block, property) {
+			t.Errorf("the icon rescue does not undo %q, which AMP's track sets", property)
+		}
+	}
+	if !strings.Contains(css, `.ampbb input[type="checkbox"] + .mat-icon::after { content: none; }`) {
+		t.Error("the knob AMP draws in ::after is still there")
+	}
+	// It has to stay narrow: undoing it for every span would take AMP's own
+	// switch with it, and those are what the rules are switched by.
+	if strings.Contains(css, `.ampbb input[type="checkbox"] + span {`) {
+		t.Error("the reset is wide enough to destroy the rule switches as well")
 	}
 }
 
@@ -271,5 +305,81 @@ func TestTheFileRowIconCannotBeSqueezed(t *testing.T) {
 	}
 	if !strings.Contains(css, ".ampbb-row > input[type=\"checkbox\"] { flex: 0 0 auto; }") {
 		t.Error("the row's tick box may still be shrunk by a long name")
+	}
+}
+
+// nginx injects the loader into every page the panel serves, the controller's
+// instance list included. The tab belongs to one instance, so the loader has
+// to recognise where it is before it registers anything: on the controller the
+// session is a controller session that no instance accepts, and on another
+// instance it would show one server's snapshots to somebody looking at
+// another's, with a restore button underneath them.
+func TestTheLoaderOnlyRegistersInItsOwnInstanceView(t *testing.T) {
+	loader := asset(t, "Loader.js")
+
+	if !strings.Contains(loader, instanceIDPlaceholder) {
+		t.Fatalf("Loader.js no longer carries %s, so the daemon cannot tell it which instance is its own",
+			instanceIDPlaceholder)
+	}
+	// Mirrors AMP's checkADSLogin: an instance view is /remote/<id>/...,
+	// /instance/<id>/..., or ?remote= / ?instance=.
+	for _, needed := range []string{"'remote'", "'instance'", "location.pathname", "location.search"} {
+		if !strings.Contains(loader, needed) {
+			t.Errorf("Loader.js does not look for %s, which is how AMP names an instance view", needed)
+		}
+	}
+	if !strings.Contains(loader, "if (!belongsOnThisPage()) { return; }") {
+		t.Error("the loader never acts on what it worked out")
+	}
+	// The gate has to come before the hook, or the plugin loads anyway.
+	if strings.Index(loader, "belongsOnThisPage()) { return; }") > strings.Index(loader, "if (hook())") {
+		t.Error("the loader hooks AMP's start-up before deciding whether it belongs here")
+	}
+}
+
+// The placeholder is filled in on the way out, and what arrives has to stay
+// inside the string literal it lands in.
+func TestTheServedLoaderCarriesTheInstanceID(t *testing.T) {
+	rec := httptest.NewRecorder()
+	assetHandler("6b85d8b3-eaff-4722-ac97-52e4f4441948").ServeHTTP(
+		rec, httptest.NewRequest(http.MethodGet, "/Loader.js", nil))
+
+	body := rec.Body.String()
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	if strings.Contains(body, instanceIDPlaceholder) {
+		t.Error("the placeholder was served as it stands")
+	}
+	if !strings.Contains(body, "'6b85d8b3-eaff-4722-ac97-52e4f4441948'") {
+		t.Error("the served loader does not know which instance it belongs to")
+	}
+	if rec.Header().Get("ETag") == "" {
+		t.Error("the substituted file has no ETag, so the panel would cache the embedded one")
+	}
+}
+
+// An id that could close the literal it is substituted into would be a script
+// injected into every page of somebody's panel. It comes from a command line
+// rather than a request, which is a reason to be sure and not a reason to skip
+// it.
+func TestAnAwkwardInstanceIDCannotEscapeTheLiteral(t *testing.T) {
+	rec := httptest.NewRecorder()
+	assetHandler(`'; alert(1); var x='`).ServeHTTP(
+		rec, httptest.NewRequest(http.MethodGet, "/Loader.js", nil))
+
+	body := rec.Body.String()
+	line := regexp.MustCompile(`const INSTANCE = '.*';`).FindString(body)
+	if line == "" {
+		t.Fatal("no INSTANCE line in the served loader")
+	}
+	// Every quote inside the literal has to be escaped, or the rest of the
+	// line is code rather than a value.
+	inside := strings.TrimSuffix(strings.TrimPrefix(line, "const INSTANCE = '"), "';")
+	if strings.Contains(strings.ReplaceAll(inside, `\'`, ""), "'") {
+		t.Errorf("the id closed its own string literal: %s", line)
+	}
+	if !strings.Contains(inside, "alert(1)") {
+		t.Errorf("the id did not survive the escaping at all: %s", line)
 	}
 }

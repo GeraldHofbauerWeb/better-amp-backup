@@ -109,6 +109,22 @@ AMP 2.8 has no call that names the session's own user, so the name shown beside
 a change is the one the panel reported and is labelled unverified. It decides
 nothing; it only labels a record somebody will read later.
 
+## Where the tab appears
+
+nginx injects the loader into every page the panel serves, the controller's
+instance list included, because the panel is one application at one origin. The
+loader therefore decides for itself whether it belongs on the page it finds
+itself in: it registers the tab only in an instance view — `/remote/<id>/…`,
+`/instance/<id>/…`, `?remote=` or `?instance=`, mirroring AMP's own
+`checkADSLogin` — and only when that id is the instance this daemon backs up.
+The daemon substitutes its instance id into `Loader.js` as it serves it.
+
+Both halves matter. On the controller the panel's session is a controller
+session, which an instance does not accept, so the tab would appear and then
+report that it was rejected. On another instance it would be worse: one
+server's snapshots shown to somebody looking at another server, with a restore
+button under them.
+
 ## Retention
 
 Each rule in "how many backups to keep" applies on its own and can be switched

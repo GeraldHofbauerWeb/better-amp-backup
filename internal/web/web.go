@@ -105,7 +105,7 @@ func NewHandler(d Deps) (http.Handler, error) {
 
 	// The plugin's own files. They carry no data and are what AMP's loader
 	// fetches before anyone has a session at all.
-	mux.Handle("GET "+PluginPrefix, http.StripPrefix(PluginPrefix, assetHandler()))
+	mux.Handle("GET "+PluginPrefix, http.StripPrefix(PluginPrefix, assetHandler(d.Settings.Get().Instance.ID)))
 
 	mux.HandleFunc("POST "+APIPrefix+"/session", s.handleExchange)
 	mux.HandleFunc("DELETE "+APIPrefix+"/session", s.guard(auth.CapRead, s.handleSignOut))
