@@ -216,3 +216,60 @@ func TestSwitchedOffRulesCollectAsZero(t *testing.T) {
 		t.Error("the keep-everything-within rule cannot be switched off")
 	}
 }
+
+// A settings row lays its three parts out in a grid. As a wrapping flex line
+// the explanation took the full width of the section and ran underneath the
+// input box beside it, and rows with an explanation sat further apart than
+// rows without, so the switches down the left edge were at an uneven pitch.
+func TestASettingsRowKeepsItsNoteOutFromUnderTheInput(t *testing.T) {
+	css := asset(t, "amp-bb.css")
+
+	block := css[strings.Index(css, ".ampbb-row-setting {"):]
+	block = block[:strings.Index(block, "}")]
+	if !strings.Contains(block, "display: grid") {
+		t.Error("the settings row is not a grid, so its note has nothing to stay inside of")
+	}
+
+	// Column 2 is the label's. Letting the note reach column 3, or span to the
+	// end, puts it back under the input.
+	if !strings.Contains(css, ".ampbb-row-setting > .ampbb-row-note { grid-column: 2; grid-row: 2; }") {
+		t.Error("the note is no longer pinned to the label's column")
+	}
+	if strings.Contains(css, ".ampbb-row-note { flex-basis: 100%") {
+		t.Error("the note still claims the full width of the row")
+	}
+}
+
+// The rules are switches rather than tick boxes, which only works if the
+// browser's own checkbox rendering is turned off first.
+func TestTheRuleSwitchesReplaceTheNativeCheckbox(t *testing.T) {
+	css := asset(t, "amp-bb.css")
+	block := css[strings.Index(css, ".ampbb .ampbb-rule-toggle,"):]
+	block = block[:strings.Index(block, "}")]
+	for _, property := range []string{"appearance: none", "border-radius: 999px", "position: relative"} {
+		if !strings.Contains(block, property) {
+			t.Errorf("the switch is missing %q, without which it renders as a tick box", property)
+		}
+	}
+	if !strings.Contains(css, ".ampbb .ampbb-rule-toggle::after,") {
+		t.Error("the switch has no knob")
+	}
+	if !strings.Contains(css, ":checked::after,") {
+		t.Error("nothing moves the knob when the rule is switched on")
+	}
+}
+
+// The icon and the tick box in a file row sit next to a name that grows to
+// fill the line. A flex item shrinks unless told not to, so a long file name
+// used to squeeze them out of shape.
+func TestTheFileRowIconCannotBeSqueezed(t *testing.T) {
+	css := asset(t, "amp-bb.css")
+	block := css[strings.Index(css, ".ampbb-row .mat-icon {"):]
+	block = block[:strings.Index(block, "}")]
+	if !strings.Contains(block, "flex: 0 0 auto") {
+		t.Error("the row icon may still be shrunk by a long name")
+	}
+	if !strings.Contains(css, ".ampbb-row > input[type=\"checkbox\"] { flex: 0 0 auto; }") {
+		t.Error("the row's tick box may still be shrunk by a long name")
+	}
+}
